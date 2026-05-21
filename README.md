@@ -139,3 +139,138 @@ Weights available at HuggingFace: [arungovindneelan/foam-cfd-unified-14b-private
 The earlier public 14B (`arungovindneelan/foam-cfd-unified-14b`) is the
 v2 baseline; this repo holds the v3 cycle-2 candidate produced
 by the active-learning + anchor-mix loop.
+
+---
+
+## Deployment
+
+### Prerequisites
+
+| Requirement | Notes |
+|-------------|-------|
+| OpenFOAM v2412 | Must be sourced before running any simulation |
+| Python ≥ 3.10 | With `vllm`, `unsloth`, `gmsh`, `chromadb`, `pydantic` |
+| NVIDIA GPU | ≥ 24 GB VRAM recommended (14 B model at bf16) |
+| HuggingFace account | Access request needed for the private weights repo |
+
+### 1. Download the model weights
+
+```bash
+pip install huggingface_hub
+huggingface-cli login          # paste your HF token when prompted
+
+huggingface-cli download \
+    arungovindneelan/foam-cfd-unified-14b-private \
+    --local-dir /data/foamllm3/openfoam_agent/data/checkpoints/qwen_coder_14b_merged
+```
+
+### 2. Install the package
+
+```bash
+git clone https://github.com/AGN000/AutoFOAM.git
+cd AutoFOAM
+pip install vllm unsloth gmsh chromadb pydantic sentence-transformers
+```
+
+### 3. Point the agent at your model
+
+The model path is read from `openfoam_agent/config.py`. Either edit `LLM_MODEL` directly, or use the environment variable override (no file edit needed):
+
+```bash
+export OPENFOAM_AGENT_LLM_OVERRIDE=/path/to/your/qwen_coder_14b_merged
+```
+
+### 4. Source OpenFOAM
+
+```bash
+source /path/to/openfoam2412/etc/bashrc
+# e.g. source /usr/lib/openfoam/openfoam2412/etc/bashrc
+```
+
+Update `OPENFOAM_BASHRC` in `openfoam_agent/config.py` to match your installation path so the agent can source it automatically at runtime.
+
+### 5. Build the RAG index (first run only)
+
+```bash
+python scripts/index_tutorials.py      # index OpenFOAM tutorials
+python scripts/index_knowledge_base.py # index in-house knowledge entries
+```
+
+---
+
+## Usage
+
+### Interactive REPL (recommended)
+
+Loads the 14 B model once and accepts prompts in a loop — no reload between runs.
+
+```bash
+bash scripts/repl.sh
+# or pin to a specific GPU:
+GPU=0 bash scripts/repl.sh
+```
+
+```
+prompt> 2D lid-driven cavity Re=1000, 2m square, water
+prompt> NACA0012 airfoil AoA 5 deg Re=1e6 chord=1m
+prompt> turbulent pipe flow Re=50000 diameter=0.05m length=0.5m
+prompt> quit
+```
+
+REPL commands:
+
+| Command | Effect |
+|---------|--------|
+| `last` | Re-print the last result |
+| `cases` | List the 10 most recent case directories |
+| `timeout=N` | Set solver timeout in seconds (default 300) |
+| `retries=N` | Set max self-correction retries (default 1) |
+| `quit` / Ctrl-D | Exit |
+
+### One-off run
+
+```bash
+bash scripts/ask.sh "2D lid-driven cavity Re=1000, 2m square, water"
+```
+
+### Python API
+
+```python
+from openfoam_agent.agent import OpenFOAMAgent
+
+agent = OpenFOAMAgent(use_llm=True)
+
+# Single prompt
+result = agent.run(
+    "turbulent flow over a backward-facing step Re=800, step height 0.1m",
+    max_retries=3,       # Layer-1 self-correction attempts
+    sim_timeout=300,     # solver wall-clock limit in seconds
+)
+
+print(result.success)   # True / False
+print(result.score)     # 0.0 – 1.0
+print(result.solver)    # e.g. "simpleFoam"
+print(result.case_dir)  # path to generated OpenFOAM case
+print(result.feedback)  # human-readable scoring breakdown
+
+# Batch run
+prompts = [
+    "2D lid-driven cavity Re=100",
+    "Flow around cylinder Re=200 diameter=0.1m",
+    "Turbulent channel flow Re=10000",
+]
+results = agent.run_batch(prompts, max_retries=2, sim_timeout=300)
+for r in results:
+    print(f"{r.score:.2f}  {r.solver}  {r.feedback}")
+```
+
+### Key environment variables
+
+| Variable | Default | Effect |
+|----------|---------|--------|
+| `OPENFOAM_AGENT_LLM_OVERRIDE` | *(config.py value)* | Override model path without editing config |
+| `VLLM_GPU_MEM_FRAC` | `0.85` | Fraction of GPU memory reserved for vLLM |
+| `VLLM_MAX_NUM_SEQS` | `256` | vLLM max concurrent sequences |
+| `RETRY_SCORE_THRESHOLD` | `0.7` | Score below this triggers Layer-1 retry |
+| `MIN_RETRAIN_SCORE` | `0.65` | Floor score for entering the training corpus |
+| `EVOLVE_DRY_RUN` | *(unset)* | Set to `1` to validate evolve.sh without swapping the model |
