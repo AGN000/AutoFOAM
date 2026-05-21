@@ -3,7 +3,7 @@
 A self-evolving LLM-driven OpenFOAM v2412 case-authoring agent.
 
 > **Paper:** *AutoFOAM: The Self-Refining Autonomous OpenFOAM Agent* — Arun Govind Neelan & A Seshaditya  
-> **Model weights:** [arungovindneelan/foam-cfd-unified-14b](https://huggingface.co/arungovindneelan/foam-cfd-unified-14b)  
+> **Model weights:** [arungovindneelan/foam-cfd-unified-14b-private](https://huggingface.co/arungovindneelan/foam-cfd-unified-14b-private)  
 > **Dataset:** [AGN000/FoamAgentCases](https://github.com/AGN000/FoamAgentCases)  
 > **Demo:** [▶ Watch on YouTube](https://www.youtube.com/watch?v=Kx17bfFlMSc)
 
@@ -134,8 +134,8 @@ EVOLVE_DRY_RUN=1 bash scripts/evolve.sh  # validate without swap
 
 ## Model
 
-Private weights at HuggingFace: `arungovindneelan/foam-cfd-unified-14b-private`.
+Weights available at HuggingFace: [arungovindneelan/foam-cfd-unified-14b-private](https://huggingface.co/arungovindneelan/foam-cfd-unified-14b-private).
 
 The earlier public 14B (`arungovindneelan/foam-cfd-unified-14b`) is the
-v2 baseline; this private repo holds the v3 cycle-2 candidate produced
+v2 baseline; this repo holds the v3 cycle-2 candidate produced
 by the active-learning + anchor-mix loop.
