@@ -1,0 +1,37 @@
+# Heavy artefacts published separately on HuggingFace / not in this repo
+data/
+*.bin
+*.safetensors
+*.pt
+*.pth
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+
+# Editor / OS
+.DS_Store
+*.swp
+.vscode/
+.idea/
+
+# Unsloth / xgrammar / vllm caches
+unsloth_compiled_cache/
+.cache/
+.triton/
+
+# Logs and tmp
+*.log
+.coverage
+.pytest_cache/
+
+# Secrets — defensive, in case anyone ever drops one in the tree
+.env
+*.token
+hf_*.txt
