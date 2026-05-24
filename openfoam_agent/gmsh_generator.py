@@ -44,7 +44,7 @@ def _patch_type(name: str) -> str:
     for key, ptype in PATCH_TYPE_MAP.items():
         if lower == key or lower.startswith(key):
             return ptype
-    if "wall" in lower or lower in ("cylinder", "airfoil", "step", "sphere"):
+    if "wall" in lower or lower in ("cylinder", "airfoil", "step", "sphere", "wedge"):
         return "wall"
     return "patch"
 
@@ -69,7 +69,7 @@ class GmshMeshGenerator:
             GeometryType.CHANNEL: self._build_box,
             GeometryType.LID_DRIVEN_CAVITY: self._build_lid_cavity,
             GeometryType.CYLINDER: self._build_cylinder_2d,
-            GeometryType.PIPE: self._build_pipe_3d,
+            GeometryType.PIPE: self._build_pipe_3d if params.is_3d else self._build_box,
             GeometryType.BACKWARD_FACING_STEP: self._build_bfs,
             GeometryType.AIRFOIL: self._build_airfoil_box,
             GeometryType.WEDGE: self._build_wedge,
@@ -1171,29 +1171,41 @@ class GmshMeshGenerator:
 
     def _build_sphere_3d(self, params: CFDParams, msh_file: Path):
         """3D sphere in a rectangular far-field box.
-        Patches: inlet, outlet, sphere, walls (top/bottom/side far-field).
-        Domain: 10D upstream, 25D downstream, ±10D crossflow each side.
+        Patches: inlet, outlet, sphere, farfield (top/bottom/side far-field).
+        Domain scaled by Re: laminar (Re<1000) uses 5D/15D, turbulent 10D/25D.
+        Three-zone refinement: sphere surface → near-wake box → far field.
         """
         import gmsh
         gmsh.initialize()
         gmsh.option.setNumber("General.Terminal", 0)
         gmsh.option.setNumber("Mesh.MshFileVersion", 2.2)
         gmsh.option.setNumber("Mesh.Binary", 0)
+        gmsh.option.setNumber("Mesh.Algorithm3D", 10)   # HXT: better quality, faster
+        gmsh.option.setNumber("Mesh.Optimize", 1)
+        gmsh.option.setNumber("Mesh.OptimizeNetgen", 1)
         gmsh.model.add("sphere3d")
         self._current_params = params
 
         D = params.diameter or params.width or 0.1
         R = D / 2.0
-        x0, x1 = -10 * D, 25 * D
-        half  = 10 * D
+        re = params.reynolds_number or 300
 
-        pol = getattr(self, "_policy", None)
-        size_near_wall = pol.first_cell_height if pol else D / 20
-        size_near_wall = max(size_near_wall, D / 30)
-        size_bulk = max(D, size_near_wall * 8)
+        # Compact domain for laminar Re — fewer cells, faster solver
+        if re < 1000:
+            upstream, downstream, half = 5 * D, 15 * D, 6 * D
+        else:
+            upstream, downstream, half = 10 * D, 25 * D, 10 * D
+        x0, x1 = -upstream, downstream
+
+        # Mesh sizing: D/20 near sphere for laminar, D/15 for turbulent (WF)
+        size_surface = D / 20 if re < 4000 else D / 15
+        size_surface = max(size_surface, D / 30)
+        size_wake    = D * 0.5          # near-wake box refinement
+        size_bulk    = min(D * 2, half / 3)
 
         try:
-            box = gmsh.model.occ.addBox(x0, -half, -half, x1 - x0, 2 * half, 2 * half)
+            box = gmsh.model.occ.addBox(x0, -half, -half,
+                                         x1 - x0, 2 * half, 2 * half)
             sph = gmsh.model.occ.addSphere(0, 0, 0, R)
             domain, _ = gmsh.model.occ.cut([(3, box)], [(3, sph)])
             gmsh.model.occ.synchronize()
@@ -1209,16 +1221,15 @@ class GmshMeshGenerator:
                 xspan = abs(bb[3] - bb[0])
                 yspan = abs(bb[4] - bb[1])
                 zspan = abs(bb[5] - bb[2])
-                xmid = (bb[0] + bb[3]) / 2
-                ymid = (bb[1] + bb[4]) / 2
-                zmid = (bb[2] + bb[5]) / 2
-                # Sphere surface: small extents and centred near origin
+                xmid  = (bb[0] + bb[3]) / 2
+                ymid  = (bb[1] + bb[4]) / 2
+                zmid  = (bb[2] + bb[5]) / 2
                 if (xspan < D * 1.1 and yspan < D * 1.1 and zspan < D * 1.1
                         and abs(xmid) < D and abs(ymid) < D and abs(zmid) < D):
                     sph_tags.append(tag)
-                elif xspan < 1e-6 and abs(bb[0] - x0) < 0.01:
+                elif abs(bb[0] - x0) < D * 0.05 and xspan < D * 0.1:
                     inlet_tags.append(tag)
-                elif xspan < 1e-6 and abs(bb[0] - x1) < 0.01:
+                elif abs(bb[3] - x1) < D * 0.05 and xspan < D * 0.1:
                     outlet_tags.append(tag)
                 else:
                     ff_tags.append(tag)
@@ -1226,22 +1237,43 @@ class GmshMeshGenerator:
             if inlet_tags:  gmsh.model.addPhysicalGroup(2, inlet_tags,  name="inlet")
             if outlet_tags: gmsh.model.addPhysicalGroup(2, outlet_tags, name="outlet")
             if sph_tags:    gmsh.model.addPhysicalGroup(2, sph_tags,    name="sphere")
-            if ff_tags:     gmsh.model.addPhysicalGroup(2, ff_tags,     name="walls")
+            if ff_tags:     gmsh.model.addPhysicalGroup(2, ff_tags,     name="farfield")
             gmsh.model.addPhysicalGroup(3, [vol_tag], name="fluid")
 
+            # Two-zone background mesh: sphere surface + wake box; Min picks finest
+            fields = []
             if sph_tags:
                 fd = gmsh.model.mesh.field.add("Distance")
                 gmsh.model.mesh.field.setNumbers(fd, "SurfacesList", sph_tags)
                 ft = gmsh.model.mesh.field.add("Threshold")
                 gmsh.model.mesh.field.setNumber(ft, "InField", fd)
-                gmsh.model.mesh.field.setNumber(ft, "SizeMin", size_near_wall)
+                gmsh.model.mesh.field.setNumber(ft, "SizeMin", size_surface)
                 gmsh.model.mesh.field.setNumber(ft, "SizeMax", size_bulk)
                 gmsh.model.mesh.field.setNumber(ft, "DistMin", 0)
-                gmsh.model.mesh.field.setNumber(ft, "DistMax", D * 4)
-                gmsh.model.mesh.field.setAsBackgroundMesh(ft)
-                gmsh.option.setNumber("Mesh.CharacteristicLengthMin", size_near_wall)
-                gmsh.option.setNumber("Mesh.CharacteristicLengthMax", size_bulk)
+                gmsh.model.mesh.field.setNumber(ft, "DistMax", D * 3)
+                fields.append(ft)
 
+                # Wake box: refine downstream of sphere to capture recirculation
+                fb = gmsh.model.mesh.field.add("Box")
+                gmsh.model.mesh.field.setNumber(fb, "VIn",  size_wake)
+                gmsh.model.mesh.field.setNumber(fb, "VOut", size_bulk)
+                gmsh.model.mesh.field.setNumber(fb, "XMin", 0)
+                gmsh.model.mesh.field.setNumber(fb, "XMax", downstream * 0.4)
+                gmsh.model.mesh.field.setNumber(fb, "YMin", -D * 1.5)
+                gmsh.model.mesh.field.setNumber(fb, "YMax",  D * 1.5)
+                gmsh.model.mesh.field.setNumber(fb, "ZMin", -D * 1.5)
+                gmsh.model.mesh.field.setNumber(fb, "ZMax",  D * 1.5)
+                fields.append(fb)
+
+            if len(fields) > 1:
+                fmin = gmsh.model.mesh.field.add("Min")
+                gmsh.model.mesh.field.setNumbers(fmin, "FieldsList", fields)
+                gmsh.model.mesh.field.setAsBackgroundMesh(fmin)
+            elif fields:
+                gmsh.model.mesh.field.setAsBackgroundMesh(fields[0])
+
+            gmsh.option.setNumber("Mesh.CharacteristicLengthMin", size_surface)
+            gmsh.option.setNumber("Mesh.CharacteristicLengthMax", size_bulk)
             gmsh.model.mesh.generate(3)
             gmsh.write(str(msh_file))
         finally:
