@@ -23,7 +23,7 @@ def _bc_valid(case_dir: Path) -> bool:
 
 
 def _residuals_monotone(history: dict[str, list[float]]) -> bool:
-    """Last-half mean < first-half mean for majority of tracked fields."""
+
     if not history:
         return False
     n_good = 0
@@ -38,7 +38,7 @@ def _residuals_monotone(history: dict[str, list[float]]) -> bool:
 
 
 def _residuals_plateau(history: dict[str, list[float]], final_residuals: dict[str, float]) -> bool:
-    """Detect stagnation: residuals stuck at a high value (>1e-3), not at convergence."""
+
     for field, vals in history.items():
         if len(vals) < 10:
             continue
@@ -54,7 +54,7 @@ def _residuals_plateau(history: dict[str, list[float]], final_residuals: dict[st
 
 
 def _check_mass_conservation(log: str) -> bool:
-    """Scan log for continuity residual below 1e-3."""
+
     for line in log.splitlines():
         low = line.lower()
         if "continuity errors" in low or "continuity" in low:
@@ -70,10 +70,7 @@ def _check_mass_conservation(log: str) -> bool:
 
 
 def _residual_trend_quality(history: dict[str, list[float]]) -> float:
-    """Return 0.0–1.0 score for residual convergence quality.
 
-    Considers: rate of decrease, absence of late spikes, final magnitude.
-    """
     if not history:
         return 0.0
     scores = []
@@ -104,13 +101,13 @@ def compute_reward(
     feedback = []
     log = run_result.log
 
-    # ── Immediate fatal failures ───────────────────────────────────────────
+
     if "FOAM FATAL ERROR" in log or "FOAM FATAL Exception" in log:
         return 0.0, f"FATAL ERROR: {run_result.error_message[:200]}"
     if "TIMEOUT" in run_result.error_message or run_result.runtime < 0:
         return 0.0, "TIMEOUT"
 
-    # ── Convergence signal: +0.40 / +0.15 / +0.05 ────────────────────────
+
     if run_result.converged:
         score += 0.40
     elif run_result.success and run_result.final_residuals:
@@ -120,7 +117,7 @@ def compute_reward(
         score += 0.05
         feedback.append("ran with no residual output")
 
-    # ── Residual magnitude: +0.20 / +0.10 ────────────────────────────────
+
     if run_result.final_residuals:
         max_res = max(run_result.final_residuals.values())
         if max_res < 1e-4:
@@ -133,32 +130,30 @@ def compute_reward(
     else:
         feedback.append("no residuals found in log")
 
-    # ── Residual trend quality: +0.0 to +0.10 ────────────────────────────
+
     trend = _residual_trend_quality(run_result.residual_history)
     score += trend * 0.10
     if trend < 0.2 and run_result.residual_history:
         feedback.append("poor residual convergence trend")
 
-    # ── Mass conservation: +0.05 ──────────────────────────────────────────
+
     if _check_mass_conservation(log):
         score += 0.05
     else:
         feedback.append("mass conservation not verified")
 
-    # ── Correct solver: +0.10 ─────────────────────────────────────────────
     expected = select_solver(params)
     if solver == expected:
         score += 0.10
     else:
         feedback.append(f"solver {solver} (expected {expected})")
 
-    # ── Valid BCs: +0.05 ──────────────────────────────────────────────────
+
     if case_dir and _bc_valid(case_dir):
         score += 0.05
     elif not case_dir:
         score += 0.03
 
-    # ── Penalties ─────────────────────────────────────────────────────────
     if run_result.mesh_max_non_ortho > 70:
         score -= 0.10
         feedback.append(f"poor mesh quality (non-ortho={run_result.mesh_max_non_ortho:.1f}°)")
