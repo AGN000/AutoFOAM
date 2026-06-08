@@ -1,30 +1,3 @@
-#!/usr/bin/env python3
-"""DPO (Direct Preference Optimization) on top of the current SFT adapter.
-
-Layer 4 of the self-evolution plan. Consumes the (chosen, rejected) pairs
-that curate_dataset.py mines from attempts.jsonl and teaches the model
-to prefer the retry-style answer on the *first* try.
-
-Inputs:
-    data/dataset/dpo_pairs.jsonl     (from curate_dataset.py --pairs-out)
-
-Output:
-    data/checkpoints/qwen_coder_14b_dpo/final_adapter/
-
-Usage:
-    conda run -n vllm_env python scripts/train_dpo.py
-    conda run -n vllm_env python scripts/train_dpo.py --pairs PATH --epochs 1
-
-Notes:
-- Loads the *current* merged model (config.LLM_MODEL) and re-applies LoRA
-  on top — DPO never trains from scratch; it always corrects an existing
-  policy. The reference model is the same base loaded with
-  ref_adapter_name=None so PEFT handles the disable-adapters trick.
-- Defaults are conservative: beta=0.1, 1 epoch, lr=5e-6 — DPO is much
-  more sensitive than SFT and easy to over-fit.
-- The pair count gate (--min-pairs 50) prevents training on too little
-  signal. Real preference work needs ≥ 200 pairs; below 50 it's noise.
-"""
 from __future__ import annotations
 
 import argparse
@@ -67,7 +40,7 @@ def load_pairs(path: Path) -> list[dict]:
             if not line:
                 continue
             obj = json.loads(line)
-            # TRL DPO needs exactly these three string fields
+         
             rows.append({
                 "prompt":   obj["prompt"],
                 "chosen":   obj["chosen"],
@@ -102,7 +75,7 @@ def main():
     from trl import DPOTrainer, DPOConfig
     from datasets import Dataset
 
-    # Load current production model — DPO corrects, never trains from scratch
+
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name=LLM_MODEL,
         max_seq_length=args.max_seq,
@@ -145,8 +118,7 @@ def main():
         remove_unused_columns=False,
     )
 
-    # ref_model=None → DPOTrainer disables the LoRA adapters internally to
-    # compute the reference log-probs. Standard PEFT-DPO pattern.
+
     trainer = DPOTrainer(
         model=model,
         ref_model=None,
