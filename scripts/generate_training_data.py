@@ -1,21 +1,3 @@
-#!/usr/bin/env python3
-"""
-Generate augmented training data for OpenFOAM expert fine-tuning.
-
-Runs the simulation pipeline with ground-truth CFDParams (no LLM needed)
-for every entry in the prompt catalog, then saves:
-  - data/dataset/dataset.json        (TrainingExample records, appended)
-  - data/dataset/expert_train.jsonl  (Qwen chat format, ready for SFTTrainer)
-
-Usage:
-    conda run -n vllm_env python scripts/generate_training_data.py [--dry-run] [--tag TAG]
-
-Options:
-    --dry-run   Print catalog stats without running simulations.
-    --tag TAG   Only run cases whose case_tag starts with TAG (e.g. "cavity").
-    --skip N    Skip first N entries (resume after crash).
-    --timeout S Simulation timeout in seconds (default 300).
-"""
 from __future__ import annotations
 
 import argparse
@@ -24,7 +6,6 @@ import sys
 import time
 from pathlib import Path
 
-# Add project root to path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
@@ -111,7 +92,7 @@ def main():
         print("[gen] --dry-run: exiting without running simulations.")
         return
 
-    # Import agent (heavy; don't import during --dry-run)
+
     from openfoam_agent.agent import OpenFOAMAgent
     agent = OpenFOAMAgent(use_llm=False)
 
@@ -120,7 +101,7 @@ def main():
     dataset_json = dataset_dir / "dataset.json"
     expert_jsonl = dataset_dir / "expert_train.jsonl"
 
-    # Load existing dataset
+
     existing: list[dict] = []
     if dataset_json.exists():
         try:
@@ -139,11 +120,11 @@ def main():
             scores.append(score)
 
             if example and score >= args.min_score:
-                # Append to dataset.json
+
                 existing.append(json.loads(example.model_dump_json()))
                 dataset_json.write_text(json.dumps(existing, indent=2))
 
-                # Append to expert_train.jsonl (Qwen chat format)
+
                 formatted = format_example(example)
                 with expert_jsonl.open("a") as f:
                     f.write(json.dumps({"text": formatted, "score": score}) + "\n")
