@@ -1,20 +1,3 @@
-#!/usr/bin/env python3
-"""
-Extract training examples directly from validated external OpenFOAM cases.
-
-Sources:
-  - /data/foamllm2/github/WorkingCase/augmentedCases/  (45 pimpleFoam cases, 5 turbulence models)
-  - /data/foamllm2/github/WorkingCase/work1/            (25 mixed cases: pisoFoam, LES, real geometry)
-
-For each case, reads the actual case files, infers physics, generates a
-natural-language prompt, and formats a Qwen chat training example at score=1.0
-(all cases are pre-validated).
-
-Appends to data/dataset/expert_train.jsonl — same format as generate_training_data.py.
-
-Usage:
-    conda run -n vllm_env python scripts/extract_external_cases.py [--dry-run]
-"""
 from __future__ import annotations
 
 import argparse
@@ -30,7 +13,7 @@ AUGMENTED_DIR = Path("/data/foamllm2/github/WorkingCase/augmentedCases")
 WORK1_DIR     = Path("/data/foamllm2/github/WorkingCase/work1")
 OUTPUT_JSONL  = ROOT / "data/dataset/expert_train.jsonl"
 
-# ── Case file readers ────────────────────────────────────────────────────────
+
 
 _SKIP_DIRS = {"processor0", "processor1", "processor2", "processor3",
               "__pycache__", ".git", "postProcessing"}
@@ -60,7 +43,7 @@ def _grep(text: str, pattern: str, default: str = "") -> str:
     return m.group(1).strip() if m else default
 
 
-# ── Physics inference ────────────────────────────────────────────────────────
+
 
 def _infer_physics(case_dir: Path) -> dict:
     info = {}
@@ -127,7 +110,7 @@ def _infer_physics(case_dir: Path) -> dict:
     return info
 
 
-# ── Prompt generation ────────────────────────────────────────────────────────
+
 
 _TURB_DESC = {
     "kOmegaSST": "k-omega SST RANS",
@@ -173,7 +156,7 @@ def _make_prompt(case_name: str, info: dict) -> str:
     species_note = " with passive scalar transport" if "s" in info["fields"] else ""
     Re_note = f", Re≈{U*0.1/nu:.0f}" if U > 0 and nu > 0 else ""
 
-    # Each turbulence model gets a fixed prompt style; case number shifts it for diversity
+
     _TURB_SLOT = {"kEpsilon": 0, "kOmega": 1, "kOmegaSST": 2, "realizableKE": 3,
                   "laminar": 4, "Smagorinsky": 5, "WALE": 2, "dynamicKEqn": 1}
     case_num = int(re.search(r"(\d+)", case_name).group(1)) if re.search(r"\d+", case_name) else 0
@@ -205,7 +188,6 @@ def _make_prompt(case_name: str, info: dict) -> str:
     return PROMPTS[variant]
 
 
-# ── Expert analysis builder ──────────────────────────────────────────────────
 
 def _make_analysis(case_name: str, info: dict) -> str:
     solver = info["solver"]
@@ -231,7 +213,7 @@ def _make_analysis(case_name: str, info: dict) -> str:
     return "\n".join(lines)
 
 
-# ── Qwen chat formatter ──────────────────────────────────────────────────────
+
 
 def _format_example(prompt: str, analysis: str, case_files: str) -> str:
     from openfoam_agent.training import EXPERT_SYSTEM_PROMPT
@@ -243,9 +225,8 @@ def _format_example(prompt: str, analysis: str, case_files: str) -> str:
     )
 
 
-# ── Case discovery ───────────────────────────────────────────────────────────
 
-# work1 cases to skip (incomplete / tutorial-only / duplicates)
+
 _WORK1_SKIP = {
     "OFtutorial00_helloWorld",   # hello world, no real physics
     "OFtutorial01_inputOutput",  # I/O tutorial, no simulation
@@ -254,7 +235,7 @@ _WORK1_SKIP = {
     "cavity_Gauss linearUpw",    # space in name causes issues
 }
 
-# Subdirectory patterns that are pre-run output, not case definitions
+
 _NUMERIC_RE = re.compile(r"^\d")
 
 
@@ -287,7 +268,6 @@ def _discover_cases() -> list[tuple[str, Path, str]]:
     return cases
 
 
-# ── Main ─────────────────────────────────────────────────────────────────────
 
 def main():
     p = argparse.ArgumentParser(description=__doc__,
@@ -328,7 +308,7 @@ def main():
         print(f"\n[extract] Would append {len(examples)} examples to {OUTPUT_JSONL}")
         return
 
-    # Append to expert_train.jsonl
+
     OUTPUT_JSONL.parent.mkdir(parents=True, exist_ok=True)
     existing = OUTPUT_JSONL.read_text().count("\n") if OUTPUT_JSONL.exists() else 0
 
