@@ -1,19 +1,8 @@
-#!/usr/bin/env bash
-# Interactive REPL — loads the model once, accepts prompts in a loop.
-#
-# Usage:
-#   bash scripts/repl.sh           # auto-pick a GPU with ≥30 GB free
-#   GPU=4 bash scripts/repl.sh     # force a specific GPU
-#
-# Once inside the REPL:
-#   prompt> 2D lid-driven cavity Re=1000, 2m square, water
-#   prompt> flow over NACA0012, Re=1e6, AoA 5 deg
-#   prompt> quit            (or Ctrl-D)
 
 PROJ=/data/foamllm3/openfoam_agent
 PY=/home/nvidia/miniconda3/envs/vllm_env/bin/python
 
-# Pick a GPU with enough free memory if not given
+
 if [ -z "${GPU:-}" ]; then
     GPU=$(nvidia-smi --query-gpu=index,memory.free --format=csv,noheader \
           | awk -F', ' '{ gsub(" MiB","",$2); if ($2+0 > 30000) print $1 }' \
@@ -25,7 +14,7 @@ if [ -z "${GPU:-}" ]; then
     fi
 fi
 
-# Sensible defaults that coexist with other GPU jobs.
+
 export VLLM_GPU_MEM_FRAC=${VLLM_GPU_MEM_FRAC:-0.55}
 export VLLM_MAX_NUM_SEQS=${VLLM_MAX_NUM_SEQS:-32}
 
