@@ -1,27 +1,3 @@
-#!/usr/bin/env python3
-"""
-QLoRA fine-tuning of Qwen2.5-Coder-14B on OpenFOAM expert training data.
-
-Reads from data/dataset/expert_train.jsonl (Qwen chat format, reward-weighted).
-Saves LoRA adapter to data/checkpoints/qwen_coder_14b_lora/final_adapter/.
-
-Usage (single GPU, unsloth):
-    conda run -n vllm_env python scripts/train_qlora.py
-
-Options:
-    --jsonl PATH     Path to expert_train.jsonl (default: data/dataset/expert_train.jsonl)
-    --output DIR     Output directory for adapter (default: data/checkpoints/...)
-    --epochs N       Number of training epochs (default: 3)
-    --batch N        Per-device batch size (default: 1)
-    --grad-accum N   Gradient accumulation steps (default: 8)
-    --lora-r N       LoRA rank (default: 64)
-    --lora-alpha N   LoRA alpha (default: 128)
-    --lr LR          Learning rate (default: 2e-4)
-    --min-score F    Minimum score to include example (default: 0.5)
-    --max-seq N      Maximum sequence length (default: 8192)
-    --resume         Resume from latest checkpoint in output dir
-    --no-weights     Disable reward weighting (uniform loss)
-"""
 from __future__ import annotations
 
 import argparse
@@ -71,7 +47,7 @@ def load_jsonl(path: Path, min_score: float) -> tuple[list[str], list[float]]:
 def main():
     args = parse_args()
 
-    # ── Load dataset ────────────────────────────────────────────────────────
+
     if not args.jsonl.exists():
         print(f"[train] ERROR: {args.jsonl} not found — run generate_training_data.py first")
         sys.exit(1)
@@ -81,7 +57,7 @@ def main():
         print(f"[train] No examples with score >= {args.min_score}")
         sys.exit(1)
 
-    # Reward weights: score² normalised to mean=1
+
     if args.no_weights:
         weights = [1.0] * len(texts)
     else:
@@ -100,7 +76,7 @@ def main():
     print(f"[train] Effective batch : {args.batch * args.grad_accum}")
     print(f"[train] Output          : {args.output}\n")
 
-    # ── Load model with Unsloth ──────────────────────────────────────────────
+
     from openfoam_agent.config import LLM_MODEL
     from unsloth import FastLanguageModel
     from trl import SFTTrainer, SFTConfig
@@ -125,10 +101,10 @@ def main():
         random_state=42,
     )
 
-    # ── Build HF dataset ─────────────────────────────────────────────────────
+
     dataset = Dataset.from_dict({"text": texts, "weight": weights})
 
-    # ── Training config ──────────────────────────────────────────────────────
+
     args.output.mkdir(parents=True, exist_ok=True)
 
     resume_from = None
@@ -159,7 +135,7 @@ def main():
         remove_unused_columns=True,
     )
 
-    # ── Reward-weighted trainer ──────────────────────────────────────────────
+
     from openfoam_agent.training import make_reward_weighted_trainer
     WeightedTrainer = make_reward_weighted_trainer(SFTTrainer)
 
@@ -171,17 +147,16 @@ def main():
         args=training_args,
     )
 
-    # ── Train ────────────────────────────────────────────────────────────────
+
     print("[train] Starting QLoRA fine-tuning...")
     trainer.train(resume_from_checkpoint=resume_from)
 
-    # ── Save adapter ─────────────────────────────────────────────────────────
+
     adapter_dir = args.output / "final_adapter"
     model.save_pretrained(str(adapter_dir))
     tokenizer.save_pretrained(str(adapter_dir))
     print(f"\n[train] Adapter saved → {adapter_dir}")
 
-    # ── Print training summary ───────────────────────────────────────────────
     log = trainer.state.log_history
     if log:
         train_losses = [e["loss"] for e in log if "loss" in e]
