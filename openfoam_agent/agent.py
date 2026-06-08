@@ -98,22 +98,12 @@ class OpenFOAMAgent:
             try:
                 if self.use_llm and self._llm:
                     from . import param_extractor
-                    # Feed the user's *original* prompt to the JSON-schema
-                    # extractor. The refiner's paraphrase sometimes invents
-                    # numbers (e.g. defaults velocity to 1 m/s when only Re
-                    # was given), which then leak into downstream math.
-                    # The refined text is still useful as RAG/context but
-                    # not as the source of numeric values.
                     input_text = prompt + error_context
                     params = param_extractor.extract(self._llm, input_text,
                                                        original_prompt=prompt)
                 else:
                     params = self._fallback_params(prompt)
             except Exception as e:
-                # Heuristic salvage: if the prompt unambiguously names a
-                # multiphase / buoyant / compressible setup, build default
-                # params for it instead of giving up.
-                # Skipped under OPENFOAM_AGENT_RAW_LLM=1 (honest evaluation mode).
                 import os as _os
                 _raw = bool(_os.environ.get("OPENFOAM_AGENT_RAW_LLM"))
                 params = None if _raw else self._heuristic_params(prompt)
@@ -127,17 +117,10 @@ class OpenFOAMAgent:
                     error_context = f"\n\nPrevious extraction failed: {e}. Try again."
                     continue
 
-            # Step 3: Prompt-keyword guards — repair common LLM mis-extractions
-            # before solver selection. The catalog prompts often name the solver
-            # or physics explicitly; honour that even if the LLM contradicted it.
-            # All guards in this block are bypassed under
-            # OPENFOAM_AGENT_RAW_LLM=1 (honest evaluation mode).
             import os as _os
             _raw = bool(_os.environ.get("OPENFOAM_AGENT_RAW_LLM"))
             from .schemas import FlowRegime, TurbulenceModel
-            # Use the user's original prompt — the refiner's paraphrase can
-            # introduce words like "free surface" or "compressible" that the
-            # user never wrote, leading to spurious solver overrides.
+
             p_low = prompt.lower()
             named_multiphase = (not _raw) and any(w in p_low for w in
                 ("interfoam", "vof", "dam break", "dam-break", "dambreak",
@@ -147,9 +130,7 @@ class OpenFOAMAgent:
                 params.is_multiphase = True
                 params.is_compressible = False
                 params.has_heat_transfer = False
-            # Use the original prompt (not refined) to detect explicit solver
-            # mentions — refiner sometimes adds "transient" wording that
-            # contradicts the user's named solver.
+
             orig_low = prompt.lower()
             buoyant_solver_named = "buoyantsimplefoam" in orig_low or "buoyantsimplefoam" in p_low
             buoyant_keywords = ("natural convection" in p_low or "differentially heated" in p_low
@@ -184,10 +165,9 @@ class OpenFOAMAgent:
             if named_compressible and not params.is_multiphase and not params.has_heat_transfer:
                 params.is_compressible = True
 
-            # Step 4: Solver selection + numerical policy
+
             solver = select_solver(params)
-            # Low-Re transient: LLMs often mis-label as turbulent; override to laminar.
-            # Bypassed under OPENFOAM_AGENT_RAW_LLM=1.
+
             if (not _raw
                     and params.is_transient and not params.has_heat_transfer
                     and not params.is_compressible and not params.is_multiphase
@@ -197,8 +177,7 @@ class OpenFOAMAgent:
                 params.flow_regime = FlowRegime.LAMINAR
                 params.turbulence_model = TurbulenceModel.LAMINAR
                 solver = select_solver(params)
-            # Natural convection requires a closed cavity; override complex geometries.
-            # Bypassed under OPENFOAM_AGENT_RAW_LLM=1.
+
             if (not _raw) and params.has_heat_transfer:
                 from .schemas import GeometryType
                 _safe_geoms = {GeometryType.LID_DRIVEN_CAVITY, GeometryType.BOX, GeometryType.CHANNEL}
@@ -207,8 +186,7 @@ class OpenFOAMAgent:
             res = compute_mesh_resolution(params)
             time_cfg = compute_time_settings(params, solver)
             if end_time_override is not None:
-                # Interpret override as a step count for transient solvers,
-                # else as iterations for steady (deltaT=1).
+
                 steady = solver in ("simpleFoam", "rhoSimpleFoam", "buoyantSimpleFoam")
                 if steady:
                     time_cfg["end_time"] = end_time_override
@@ -217,10 +195,6 @@ class OpenFOAMAgent:
                 time_cfg["write_interval"] = max(1, int(end_time_override))
             num_policy = compute_numerical_policy(params, solver)
 
-            # Step 4: RAG retrieval — guide extraction context on retry.
-            # We pull full file contents (controlDict / fvSchemes / BC) for the
-            # top-K matched tutorial cases so that on the NEXT retry the
-            # param-extractor sees adaptable templates, not just case names.
             rag_with_content: list[dict] = []
             if self._rag:
                 try:
@@ -241,7 +215,7 @@ class OpenFOAMAgent:
                 except Exception as e:
                     print(f"[agent] gmsh failed (attempt {attempt}): {e} — falling back to blockMesh")
 
-            # Step 6: Case files — inject numerical policy
+
             from .case_writer import CaseWriter, CaseWriterConfig
             cfg = CaseWriterConfig(
                 params=params,
@@ -260,7 +234,7 @@ class OpenFOAMAgent:
                 error_context = f"\n\nCase file generation failed: {e}"
                 continue
 
-            # Step 7: Run simulation
+
             run_result = run_simulation(
                 case_dir=attempt_dir,
                 params=params,
@@ -269,11 +243,11 @@ class OpenFOAMAgent:
                 total_timeout=sim_timeout,
             )
 
-            # Save log
+      
             log_file = attempt_dir / "agent.log"
             log_file.write_text(run_result.log)
 
-            # Step 8: Score
+
             score, feedback = compute_reward(run_result, params, solver, attempt_dir)
 
             last_result = AgentResult(
@@ -291,8 +265,7 @@ class OpenFOAMAgent:
                 rag_examples_used=rag_examples,
             )
 
-            # Capture every attempt (success or fail) for retry-pair mining
-            # by Layer-2 curation. Distinct from dataset.json (curated).
+
             self._append_attempt(prompt, refined_text, params, solver,
                                   attempt_dir, run_result, score, feedback,
                                   attempt)
@@ -301,17 +274,12 @@ class OpenFOAMAgent:
                 self._save_to_dataset(prompt, refined_text, params, solver, attempt_dir, run_result, score, feedback)
                 return last_result
 
-            # Layer 1: widen retry trigger beyond FOAM FATAL — also fire on
-            # divergence / NaN / mass-imbalance / sub-threshold score.
+
             signals = self_correct.harvest(run_result, score)
             if not self_correct.should_retry(score, signals, RETRY_SCORE_THRESHOLD):
                 return last_result
 
-            # Stream B: surgical dict-level fix attempt.
-            # If the FOAM FATAL points at a specific dict file, ask the LLM
-            # to emit a corrected version of just that file and re-run the
-            # solver — preserving mesh + extracted params + the dict files
-            # that worked. Falls through to full-pipeline retry on failure.
+
             if (signals.failure_type.startswith("foam_fatal_")
                     and self.use_llm and self._llm):
                 def _rerun():
@@ -328,8 +296,7 @@ class OpenFOAMAgent:
                     )
                     print(f"[agent] dict-fix re-run score: "
                           f"{score:.2f} → {new_score:.2f}")
-                    # Capture the dict-fix attempt as its own row in
-                    # attempts.jsonl so curate's pair miner can use it.
+  
                     self._append_attempt(prompt, refined_text, params, solver,
                                           attempt_dir, fixed, new_score,
                                           new_feedback, attempt + 100)
@@ -346,13 +313,11 @@ class OpenFOAMAgent:
                         self._save_to_dataset(prompt, refined_text, params, solver,
                                                attempt_dir, fixed, new_score, new_feedback)
                         return last_result
-                    # Dict-fix didn't help enough — fall through to full retry,
-                    # but use the (possibly-improved) new score / signals.
+
                     score, feedback = new_score, new_feedback
                     run_result = fixed
                     signals = self_correct.harvest(run_result, score)
-            # Pass RAG file contents (not just case names) so the next retry's
-            # param extractor sees adaptable controlDict / fvSchemes / BC text.
+
             error_context = self_correct.build_context(
                 run_result, params, solver, score, feedback,
                 attempt, rag_examples,
@@ -362,9 +327,7 @@ class OpenFOAMAgent:
         return last_result
 
     def _heuristic_params(self, prompt: str) -> Optional[CFDParams]:
-        """Build sensible default CFDParams when the LLM extractor blows up
-        but the prompt names a clear physics regime. Returns None to signal
-        'no obvious salvage — fall through to the normal failure path'."""
+
         from .schemas import GeometryType, FlowRegime, TurbulenceModel
         p = prompt.lower()
         is_multiphase = any(w in p for w in
@@ -461,12 +424,7 @@ class OpenFOAMAgent:
         case_dir: Path, run_result: RunResult, score: float, feedback: str,
         attempt: int,
     ):
-        """Append every attempt to attempts.jsonl for Layer-2 retry-pair mining.
 
-        Curate_dataset.py reads this file to find (prompt, low-score-attempt,
-        high-score-retry) triples and emits them as DPO-ready preference pairs.
-        Always appends — failures are as informative as successes here.
-        """
         ATTEMPTS_LOG.parent.mkdir(parents=True, exist_ok=True)
         row = {
             "prompt": prompt,
@@ -531,7 +489,7 @@ class OpenFOAMAgent:
             attempt_dir.mkdir(parents=True, exist_ok=True)
 
             solver = select_solver(params)
-            # Low-Re transient: override turbulence model to laminar for stability
+
             if (params.is_transient and not params.has_heat_transfer
                     and not params.is_compressible and not params.is_multiphase
                     and params.reynolds_number is not None
@@ -544,7 +502,7 @@ class OpenFOAMAgent:
             time_cfg = compute_time_settings(params, solver)
             num_policy = compute_numerical_policy(params, solver)
 
-            # RAG retrieval — validate that relevant tutorials are found
+        
             if self._rag:
                 try:
                     retrieved = self._rag.retrieve(params, solver, n_results=3)
@@ -609,7 +567,7 @@ class OpenFOAMAgent:
                 self._save_to_dataset(prompt, prompt, params, solver, attempt_dir, run_result, score, feedback)
                 return result
 
-        # Return last result (with actual solver) even if score < threshold
+    
         if "result" in dir():
             return result  # type: ignore[return-value]
         return AgentResult(
