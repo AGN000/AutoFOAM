@@ -1,23 +1,3 @@
-#!/usr/bin/env bash
-# Self-evolution cycle for the OpenFOAM agent (Layer 3).
-#
-#   curate (capture → JSONL)
-#     → train_qlora (1 corrective epoch on top of current adapter)
-#     → merge_adapter (bf16 merge, optional HF push)
-#     → eval gate against data/eval/ood_100_v2.json (raw-LLM mode)
-#     → swap config.py LLM_MODEL only if pass_rate ≥ baseline AND
-#       solver_match ≥ baseline (data/eval/regression_gate.json)
-#
-# Defaults are intentionally cheap (1 epoch, 25-row batch). The eval gate
-# is the safety net — a regressing adapter is kept in /failed/ for later
-# inspection rather than promoted.
-#
-# Env vars:
-#   EVOLVE_DRY_RUN=1   plan everything but do not actually swap
-#   EVOLVE_PUSH_HF=1   also push merged adapter to HuggingFace
-#   EPOCHS=N           override the corrective-train epoch count (default: 1)
-#   MIN_SCORE=F        override the curation min-score (default: config.MIN_RETRAIN_SCORE)
-#   GPU=N              CUDA device for train + merge + eval (default: 0)
 
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -38,10 +18,6 @@ log() { printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*" | tee -a "$LOG"; }
 
 log "Starting evolution cycle  (workdir: $WORKDIR, GPU: $GPU)"
 
-# ── 1. Curate the rolling capture file into Qwen-chat JSONL ─────────────────
-# Anchor mix-in (Layer 5) is on by default — adds ~30% v1-corpus rows so the
-# model can't drift away from its base capability. Disable with
-# EVOLUTION_ANCHOR_FRACTION=0.
 log "Step 1/6: curate dataset.json → expert_train.jsonl  (with anchor mix-in)"
 CURATE_ARGS=()
 [[ -n "$MIN_SCORE" ]] && CURATE_ARGS+=( --min-score "$MIN_SCORE" )
@@ -64,11 +40,7 @@ if [[ "$ROWS" -lt 5 ]]; then
 fi
 log "Curated $ROWS rows into $WORKDIR/expert_train.jsonl"
 
-# ── 1b. Active learning on the weakest solver family (Layer 6) ──────────────
-# Pulls the latest baseline eval, identifies the worst-performing family,
-# auto-generates 30 paraphrased prompts in that family, runs them through
-# the agent, and APPENDS high-score rows to the training corpus. This is
-# the layer that breaks self-distillation by adding model-independent signal.
+
 LAST_EVAL="${LAST_EVAL:-data/eval/baseline_eval_with_files.jsonl}"
 ACTIVE_LEARNING="${EVOLUTION_ACTIVE_LEARNING:-1}"
 if [[ "$ACTIVE_LEARNING" == "1" && -f "$LAST_EVAL" ]]; then
@@ -102,10 +74,7 @@ if [[ ! -d "$ADAPTER_DIR" ]]; then
     exit 1
 fi
 
-# ── 2b. Optional Layer-4 DPO pass on captured retry pairs ───────────────────
-# Only fires if curate_dataset.py mined enough pairs (default min 50).
-# DPO trains *on top* of the SFT adapter we just produced — it nudges the
-# model toward the retry-style answer for prompts where Layer 1 saved us.
+
 DPO_PAIRS_FILE="$WORKDIR/dpo_pairs.jsonl"
 DPO_MIN_PAIRS="${DPO_MIN_PAIRS:-50}"
 DPO_PAIR_COUNT=$(wc -l < "$DPO_PAIRS_FILE" 2>/dev/null || echo 0)
@@ -124,7 +93,6 @@ else
     log "Step 2b/6: skipping DPO ($DPO_PAIR_COUNT pairs < $DPO_MIN_PAIRS threshold)"
 fi
 
-# ── 3. Merge to bf16 for vLLM ───────────────────────────────────────────────
 log "Step 3/6: merge adapter → bf16"
 MERGED_DIR="$WORKDIR/merged"
 PUSH_ARGS=()
@@ -134,12 +102,7 @@ $PY scripts/merge_adapter.py \
     --output  "$MERGED_DIR" \
     "${PUSH_ARGS[@]}" 2>&1 | tee -a "$LOG"
 
-# ── 4. Eval gate: re-run the held-out OOD set with raw-LLM mode ─────────────
-# Sharded across all GPUs in $EVAL_GPUS (default: same 8 used by
-# run_full_test_parallel.sh). Single-shard sequential evaluation on one
-# GPU has been observed to hang ~50% of the way through 110 prompts when
-# vLLM trips on a tricky compressible case — sharding bounds each worker
-# to ~14 cases and isolates crashes.
+
 log "Step 4/6: eval gate vs data/eval/ood_100_v2.json (raw-LLM, sharded, --with-files)"
 EVAL_OUT="$WORKDIR/ood_eval.jsonl"
 EVAL_GPUS="${EVAL_GPUS:-0,1,2,3,4,5,6,7}"
@@ -198,10 +161,7 @@ if [[ $GATE_OK -ne 0 ]]; then
     exit 2
 fi
 
-# ── 4b. Per-prompt regression diff (Layer 7) ────────────────────────────────
-# The aggregate gate above only checks pass-rate and solver-match. Two models
-# can both score 110/110 PASS while flipping solvers on different subsets of
-# prompts. This step catches that.
+
 BASELINE_EVAL="${BASELINE_EVAL:-data/eval/baseline_eval_with_files.jsonl}"
 if [[ -f "$BASELINE_EVAL" ]]; then
     log "Step 4b/6: per-prompt regression diff vs $BASELINE_EVAL"
