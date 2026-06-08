@@ -1,21 +1,5 @@
 #!/usr/bin/env python3
-"""
-Build a HuggingFace-publishable per-file dataset from data/dataset/dataset.json.
 
-Schema follows FoamGPT (https://huggingface.co/datasets/LeoYML/FoamGPT):
-  case_name, case_domain, case_category, case_solver,
-  folder_name, file_name, file_content,
-  user_requirement, system_prompt, user_prompt
-
-Each TrainingExample row in dataset.json is exploded into one JSONL row per
-OpenFOAM dictionary file (system/*, constant/*, 0/*) parsed out of
-case_files_text. The Qwen-chat training file (expert_train.jsonl) is left
-untouched — that path still drives train_qlora.py.
-
-Usage:
-    python scripts/build_hf_dataset.py
-    # writes data/dataset/foam_openfoam_dataset.jsonl
-"""
 from __future__ import annotations
 
 import json
@@ -46,7 +30,7 @@ SOLVER_DOMAIN = {
     "pisoFoam":           "incompressible flow (transient, legacy PISO)",
 }
 
-# user_requirement template per OpenFOAM file (substring match)
+
 FILE_REQUIREMENT = {
     "controlDict":        "Configure run control: application solver, time range, deltaT, write intervals, runtime modifiability.",
     "fvSchemes":          "Specify discretisation schemes (ddt, grad, div, laplacian, interpolation, snGrad) appropriate for the solver and flow regime.",
