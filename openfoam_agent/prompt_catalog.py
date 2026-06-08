@@ -1,19 +1,4 @@
-"""
-Augmented prompt catalog for OpenFOAM expert fine-tuning data generation.
 
-Each entry pairs a natural-language prompt with ground-truth CFDParams so the
-simulation pipeline can be run without an LLM for param extraction.
-
-Solver coverage (via solver_selector.py):
-  simpleFoam          — steady incompressible (default)
-  icoFoam             — transient laminar (is_transient=True, Re<2300, LAMINAR)
-  pimpleFoam          — transient turbulent/high-Re (is_transient=True, else)
-  buoyantSimpleFoam   — steady with heat transfer (has_heat_transfer=True)
-  buoyantPimpleFoam   — transient heat transfer (has_heat_transfer=True, is_transient=True)
-  rhoSimpleFoam       — steady compressible (is_compressible=True)
-  rhoPimpleFoam       — transient compressible (is_compressible=True, is_transient=True)
-  interFoam           — VOF multiphase (is_multiphase=True)
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -26,7 +11,6 @@ from .schemas import (
 
 @dataclass
 class PromptCase:
-    """One (prompt, params) training pair."""
     prompt: str
     params: CFDParams
     case_tag: str          # e.g. "cavity_re100"
@@ -114,7 +98,7 @@ def _cylinder(re: float, D: float, fluid: str = "air") -> CFDParams:
 def _channel(re: float, L: float, H: float, fluid: str = "air") -> CFDParams:
     nu = 1.5e-5 if fluid == "air" else 1e-6
     rho = 1.225 if fluid == "air" else 1000.0
-    # Re for channel based on half-height (H/2)
+
     u_inlet = re * nu / (H / 2)
     turb = re > 4000
     return CFDParams(
@@ -271,7 +255,7 @@ def _cavity_transient(re: float, size: float = 1.0) -> CFDParams:
 
 
 def _cylinder_transient(re: float, D: float, fluid: str = "air") -> CFDParams:
-    """Transient cylinder flow: icoFoam if laminar Re<2300, pimpleFoam otherwise."""
+
     nu = 1.5e-5 if fluid == "air" else 1e-6
     rho = 1.225 if fluid == "air" else 1000.0
     U = re * nu / D
@@ -300,7 +284,7 @@ def _cylinder_transient(re: float, D: float, fluid: str = "air") -> CFDParams:
 
 
 def _pipe_transient(re: float, D: float, L: float, fluid: str = "air") -> CFDParams:
-    """Transient pipe startup: icoFoam (laminar) or pimpleFoam (turbulent)."""
+
     nu = 1.5e-5 if fluid == "air" else 1e-6
     rho = 1.225 if fluid == "air" else 1000.0
     U = re * nu / D
@@ -327,7 +311,7 @@ def _pipe_transient(re: float, D: float, L: float, fluid: str = "air") -> CFDPar
 
 
 def _compressible_box(mach: float, L: float, H: float, is_transient: bool = True) -> CFDParams:
-    """High-speed channel/box → rhoPimpleFoam (transient) or rhoSimpleFoam (steady)."""
+
     gamma, R = 1.4, 287.0
     T_ref = 300.0
     c_sound = (gamma * R * T_ref) ** 0.5  # ~347 m/s
@@ -357,7 +341,7 @@ def _compressible_box(mach: float, L: float, H: float, is_transient: bool = True
 
 
 def _compressible_pipe(mach: float, D: float, L: float, is_transient: bool = False) -> CFDParams:
-    """Compressible pipe flow → rhoSimpleFoam (steady) or rhoPimpleFoam (transient)."""
+
     gamma, R = 1.4, 287.0
     T_ref = 300.0
     c_sound = (gamma * R * T_ref) ** 0.5
@@ -387,7 +371,7 @@ def _compressible_pipe(mach: float, D: float, L: float, is_transient: bool = Fal
 
 
 def _dam_break(L: float = 4.0, H: float = 2.0) -> CFDParams:
-    """Water dam break in air → interFoam (VOF multiphase transient)."""
+
     return CFDParams(
         geometry_type=GeometryType.BOX,
         is_3d=False,
@@ -410,7 +394,7 @@ def _dam_break(L: float = 4.0, H: float = 2.0) -> CFDParams:
 
 
 def _wave_channel(L: float = 10.0, H: float = 2.0) -> CFDParams:
-    """Free-surface wave channel → interFoam (VOF multiphase transient)."""
+
     return CFDParams(
         geometry_type=GeometryType.CHANNEL,
         is_3d=False,
@@ -433,7 +417,7 @@ def _wave_channel(L: float = 10.0, H: float = 2.0) -> CFDParams:
 
 
 def _cavity_buoyancy(size: float = 1.0) -> CFDParams:
-    """Differentially heated cavity → buoyantSimpleFoam."""
+
     return CFDParams(
         geometry_type=GeometryType.LID_DRIVEN_CAVITY,
         is_3d=False,
@@ -456,7 +440,6 @@ def _cavity_buoyancy(size: float = 1.0) -> CFDParams:
 
 
 def _buoyancy(size: float = 1.0, turb: bool = False, end_time: float = 2000.0) -> CFDParams:
-    """Differentially heated cavity → buoyantSimpleFoam (laminar or turbulent Ra)."""
     return CFDParams(
         geometry_type=GeometryType.LID_DRIVEN_CAVITY,
         is_3d=False,
@@ -479,7 +462,7 @@ def _buoyancy(size: float = 1.0, turb: bool = False, end_time: float = 2000.0) -
 
 
 def _channel_transient(re: float, L: float, H: float) -> CFDParams:
-    """Transient channel flow → icoFoam (Re<2300) or pimpleFoam (Re>=2300)."""
+
     nu = 1.5e-5
     u_inlet = re * nu / (H / 2)
     turb = re >= 2300
@@ -505,7 +488,7 @@ def _channel_transient(re: float, L: float, H: float) -> CFDParams:
 
 
 def _bfs_transient(re: float, step_h: float) -> CFDParams:
-    """Transient backward-facing step → icoFoam (Re<2300) or pimpleFoam (Re>=2300)."""
+
     nu = 1.5e-5
     u_inlet = re * nu / step_h
     turb = re >= 2300
@@ -531,7 +514,7 @@ def _bfs_transient(re: float, step_h: float) -> CFDParams:
 
 
 def _sloshing(L: float = 2.0, H: float = 1.0) -> CFDParams:
-    """Partially-filled sloshing tank → interFoam (VOF transient)."""
+
     return CFDParams(
         geometry_type=GeometryType.BOX,
         is_3d=False,
@@ -553,13 +536,11 @@ def _sloshing(L: float = 2.0, H: float = 1.0) -> CFDParams:
     )
 
 
-# ---------------------------------------------------------------------------
-# Augmented prompt catalog
-# ---------------------------------------------------------------------------
+
 
 PROMPT_CATALOG: list[PromptCase] = [
 
-    # ── LID-DRIVEN CAVITY ──────────────────────────────────────────────────
+
 
     PromptCase(
         prompt="2D lid-driven cavity flow at Re=100",
@@ -622,7 +603,6 @@ PROMPT_CATALOG: list[PromptCase] = [
         expert_notes="Validation case. Compare against Ghia 1982 data.",
     ),
 
-    # ── PIPE FLOW ─────────────────────────────────────────────────────────
 
     PromptCase(
         prompt="turbulent pipe flow Re=50000, diameter=0.05m, length=0.5m",
@@ -685,7 +665,7 @@ PROMPT_CATALOG: list[PromptCase] = [
         expert_notes="Expert phrasing emphasising wall treatment.",
     ),
 
-    # ── CYLINDER FLOW ─────────────────────────────────────────────────────
+
 
     PromptCase(
         prompt="2D flow over a circular cylinder at Re=200, D=0.1m",
@@ -748,7 +728,7 @@ PROMPT_CATALOG: list[PromptCase] = [
         expert_notes="Solver explicitly named by user.",
     ),
 
-    # ── CHANNEL FLOW ──────────────────────────────────────────────────────
+
 
     PromptCase(
         prompt="2D turbulent channel flow at Re=10000, length 5m, height 0.1m",
@@ -811,7 +791,7 @@ PROMPT_CATALOG: list[PromptCase] = [
         expert_notes="kOmegaSST with kqRWallFunction on top/bottom walls.",
     ),
 
-    # ── BACKWARD-FACING STEP ──────────────────────────────────────────────
+
 
     PromptCase(
         prompt="backward-facing step flow at Re=800, step height h=0.1m",
@@ -862,7 +842,7 @@ PROMPT_CATALOG: list[PromptCase] = [
         expert_notes="Expansion ratio 1:2. Standard setup.",
     ),
 
-    # ── AIRFOIL — simpleFoam (turbulent/laminar) ───────────────────────────
+
 
     PromptCase(
         prompt="RANS simulation of NACA0012 airfoil, Re=1e6, angle of attack 5 degrees, chord=1m, kOmegaSST",
@@ -925,7 +905,7 @@ PROMPT_CATALOG: list[PromptCase] = [
         expert_notes="All parameters explicit — Re=1e6 from U=15, chord=1m, nu=1.5e-5.",
     ),
 
-    # ── WEDGE (axisymmetric) — simpleFoam ─────────────────────────────────
+
 
     PromptCase(
         prompt="axisymmetric pipe flow using wedge geometry, Re=500, D=0.02m, L=0.3m, laminar air",
@@ -976,7 +956,7 @@ PROMPT_CATALOG: list[PromptCase] = [
         expert_notes="Moderately turbulent axisymmetric pipe.",
     ),
 
-    # ── BOX (general duct / flat-plate) — simpleFoam ──────────────────────
+
 
     PromptCase(
         prompt="laminar rectangular duct flow, Re=1000, length=2m, height=0.1m, 2D, air",
@@ -1015,7 +995,7 @@ PROMPT_CATALOG: list[PromptCase] = [
         expert_notes="Transitional Re, use laminar solver as conservative choice.",
     ),
 
-    # ── TRANSIENT — icoFoam (laminar, Re<2300) ────────────────────────────
+
 
     PromptCase(
         prompt="transient lid-driven cavity flow Re=100, impulsive start, 2D, icoFoam, air",
@@ -1048,7 +1028,7 @@ PROMPT_CATALOG: list[PromptCase] = [
         expert_notes="Pipe flow startup transient. icoFoam, approaches Hagen-Poiseuille at steady state.",
     ),
 
-    # ── TRANSIENT — pimpleFoam (turbulent or Re>=2300) ────────────────────
+
 
     PromptCase(
         prompt="transient turbulent vortex shedding from a cylinder, Re=3800, D=0.1m, pimpleFoam",
@@ -1081,7 +1061,7 @@ PROMPT_CATALOG: list[PromptCase] = [
         expert_notes="Re=500 laminar transient → icoFoam (Re<2300, laminar).",
     ),
 
-    # ── HEAT TRANSFER — buoyantSimpleFoam ─────────────────────────────────
+
 
     PromptCase(
         prompt="differentially heated square cavity, hot left wall, cold right wall, natural convection, air",
@@ -1114,7 +1094,7 @@ PROMPT_CATALOG: list[PromptCase] = [
         expert_notes="Mixed convection. buoyantSimpleFoam with small inlet velocity for forced component.",
     ),
 
-    # ── COMPRESSIBLE — rhoSimpleFoam (steady) ─────────────────────────────
+
 
     PromptCase(
         prompt="steady compressible channel flow at Mach 0.5, L=2m, H=0.1m, air, rhoSimpleFoam",
@@ -1141,7 +1121,7 @@ PROMPT_CATALOG: list[PromptCase] = [
         expert_notes="Near-transonic compressible. rhoSimpleFoam, density effects important.",
     ),
 
-    # ── COMPRESSIBLE — rhoPimpleFoam (transient) ──────────────────────────
+
 
     PromptCase(
         prompt="transient compressible channel flow, Mach 0.5, L=2m, H=0.1m, air, rhoPimpleFoam",
@@ -1162,7 +1142,7 @@ PROMPT_CATALOG: list[PromptCase] = [
         expert_notes="rhoPimpleFoam with kOmegaSST. Energy equation with sensibleEnthalpy.",
     ),
 
-    # ── MULTIPHASE — interFoam (VOF) ──────────────────────────────────────
+
 
     PromptCase(
         prompt="dam break simulation: water column collapses in air, 2D box 4m×2m, interFoam",
@@ -1195,7 +1175,7 @@ PROMPT_CATALOG: list[PromptCase] = [
         expert_notes="Wave tank VOF. interFoam, Courant-limited dt for interface tracking.",
     ),
 
-    # ── buoyantSimpleFoam augmented ────────────────────────────────────────
+
 
     PromptCase(
         prompt="natural convection in a small 0.5m × 0.5m heated cavity, air, buoyantSimpleFoam",
@@ -1270,7 +1250,7 @@ PROMPT_CATALOG: list[PromptCase] = [
         expert_notes="Aspect ratio 2:1 cavity. buoyantSimpleFoam laminar.",
     ),
 
-    # ── icoFoam augmented ─────────────────────────────────────────────────
+
 
     PromptCase(
         prompt="transient lid-driven cavity Re=200, 0.5m × 0.5m, impulsive start, 2D air, icoFoam",
@@ -1345,7 +1325,7 @@ PROMPT_CATALOG: list[PromptCase] = [
         expert_notes="Transient BFS Re=800. icoFoam laminar. Captures development of recirculation.",
     ),
 
-    # ── pimpleFoam augmented ───────────────────────────────────────────────
+
 
     PromptCase(
         prompt="turbulent transient vortex shedding cylinder Re=5000, D=0.1m, 2D, pimpleFoam kOmegaSST",
@@ -1432,7 +1412,7 @@ PROMPT_CATALOG: list[PromptCase] = [
         expert_notes="Re=3000 transient turbulent channel. pimpleFoam kOmegaSST.",
     ),
 
-    # ── rhoSimpleFoam augmented ────────────────────────────────────────────
+
 
     PromptCase(
         prompt="steady compressible duct flow Mach 0.4, L=2m, H=0.1m, air, rhoSimpleFoam",
@@ -1507,7 +1487,7 @@ PROMPT_CATALOG: list[PromptCase] = [
         expert_notes="Compressible wide channel Ma=0.5. rhoSimpleFoam.",
     ),
 
-    # ── rhoPimpleFoam augmented ────────────────────────────────────────────
+
 
     PromptCase(
         prompt="transient compressible duct flow Ma=0.3, L=2m, H=0.1m, air, rhoPimpleFoam",
@@ -1582,7 +1562,7 @@ PROMPT_CATALOG: list[PromptCase] = [
         expert_notes="Long transient compressible duct. rhoPimpleFoam.",
     ),
 
-    # ── interFoam augmented ────────────────────────────────────────────────
+  
 
     PromptCase(
         prompt="small dam break: 1m water column in a 2m × 1m box, water-air, VOF interFoam",
@@ -1657,7 +1637,7 @@ PROMPT_CATALOG: list[PromptCase] = [
         expert_notes="Water rising from partial dam break in square domain. interFoam VOF.",
     ),
 
-    # ── icoFoam augmented v2 ──────────────────────────────────────────────
+ 
     PromptCase(prompt="2D laminar transient cavity Re=400, 1m × 1m, icoFoam air", params=_cavity_transient(400, 1.0), case_tag="ico_cav_re400", expert_notes="Re=400 transient lid-driven cavity icoFoam."),
     PromptCase(prompt="transient lid-driven cavity flow Re=600, 1m square, laminar air, icoFoam", params=_cavity_transient(600, 1.0), case_tag="ico_cav_re600", expert_notes="Re=600 transient cavity. icoFoam laminar."),
     PromptCase(prompt="time-dependent cavity flow Re=800, 0.75m × 0.75m, air, icoFoam laminar", params=_cavity_transient(800, 0.75), case_tag="ico_cav_re800_075", expert_notes="Re=800 cavity icoFoam."),
@@ -1681,7 +1661,7 @@ PROMPT_CATALOG: list[PromptCase] = [
     PromptCase(prompt="laminar transient cavity Re=500 0.8m air icoFoam 2D", params=_cavity_transient(500, 0.8), case_tag="ico_cav_re500_08m", expert_notes="Re=500 cavity icoFoam transient."),
     PromptCase(prompt="laminar transient cavity Re=200 0.3m air icoFoam", params=_cavity_transient(200, 0.3), case_tag="ico_cav_re200_03m", expert_notes="Re=200 small cavity icoFoam."),
 
-    # ── rhoSimpleFoam augmented v2 ────────────────────────────────────────
+
     PromptCase(prompt="steady compressible duct Ma=0.2 box L=2m H=0.1m air rhoSimpleFoam", params=_compressible_box(0.2, 2.0, 0.1, is_transient=False), case_tag="rhoSimple_box_ma02", expert_notes="Subsonic Ma=0.2 box. rhoSimpleFoam steady."),
     PromptCase(prompt="steady compressible flow box Ma=0.25 L=3m H=0.15m, air rhoSimpleFoam", params=_compressible_box(0.25, 3.0, 0.15, is_transient=False), case_tag="rhoSimple_box_ma025_long", expert_notes="Ma=0.25 long box. rhoSimpleFoam."),
     PromptCase(prompt="compressible duct flow Ma=0.35 box 2.5m × 0.12m air steady rhoSimpleFoam", params=_compressible_box(0.35, 2.5, 0.12, is_transient=False), case_tag="rhoSimple_box_ma035", expert_notes="Ma=0.35 medium box. rhoSimpleFoam steady."),
@@ -1700,7 +1680,7 @@ PROMPT_CATALOG: list[PromptCase] = [
     PromptCase(prompt="rhoSimpleFoam steady compressible box Ma=0.5 3m × 0.1m air", params=_compressible_box(0.5, 3.0, 0.1, is_transient=False), case_tag="rhoSimple_box_ma05_med", expert_notes="Ma=0.5 medium box. rhoSimpleFoam."),
     PromptCase(prompt="steady subsonic compressible flow Ma=0.6 box 2m × 0.05m rhoSimpleFoam", params=_compressible_box(0.6, 2.0, 0.05, is_transient=False), case_tag="rhoSimple_box_ma06_narrow", expert_notes="Ma=0.6 narrow box. rhoSimpleFoam."),
 
-    # ── rhoPimpleFoam augmented v2 ────────────────────────────────────────
+
     PromptCase(prompt="transient compressible box Ma=0.3 1.5m × 0.08m rhoPimpleFoam air", params=_compressible_box(0.3, 1.5, 0.08, is_transient=True), case_tag="rhoPimple_box_ma03_narrow", expert_notes="Ma=0.3 narrow transient box. rhoPimpleFoam."),
     PromptCase(prompt="rhoPimpleFoam transient box Ma=0.35 2m × 0.1m air", params=_compressible_box(0.35, 2.0, 0.1, is_transient=True), case_tag="rhoPimple_box_ma035", expert_notes="Ma=0.35 transient box rhoPimpleFoam."),
     PromptCase(prompt="transient compressible flow box Ma=0.4 long 3m × 0.12m rhoPimpleFoam", params=_compressible_box(0.4, 3.0, 0.12, is_transient=True), case_tag="rhoPimple_box_ma04_med", expert_notes="Ma=0.4 medium box transient rhoPimpleFoam."),
@@ -1720,7 +1700,7 @@ PROMPT_CATALOG: list[PromptCase] = [
     PromptCase(prompt="rhoPimpleFoam compressible box Ma=0.5 long 5m × 0.15m air", params=_compressible_box(0.5, 5.0, 0.15, is_transient=True), case_tag="rhoPimple_box_ma05_xl", expert_notes="Ma=0.5 XL transient box rhoPimpleFoam."),
     PromptCase(prompt="transient compressible box Ma=0.45 medium 2.5m × 0.12m rhoPimpleFoam", params=_compressible_box(0.45, 2.5, 0.12, is_transient=True), case_tag="rhoPimple_box_ma045_med", expert_notes="Ma=0.45 medium transient box rhoPimpleFoam."),
 
-    # ── buoyantSimpleFoam augmented v2 ────────────────────────────────────
+
     PromptCase(prompt="natural convection cavity 0.6m × 0.6m hot left cold right air buoyantSimpleFoam", params=_buoyancy(0.6), case_tag="buoy_cavity_06m", expert_notes="0.6m square cavity laminar buoyancy."),
     PromptCase(prompt="buoyantSimpleFoam differentially heated cavity 0.8m × 0.8m air natural convection", params=_buoyancy(0.8), case_tag="buoy_cavity_08m", expert_notes="0.8m cavity laminar buoyancy."),
     PromptCase(prompt="natural convection 1.2m × 1.2m enclosure hot wall cold wall air buoyantSimpleFoam steady", params=_buoyancy(1.2), case_tag="buoy_cavity_12m", expert_notes="1.2m laminar cavity buoyantSimpleFoam."),
@@ -1734,7 +1714,7 @@ PROMPT_CATALOG: list[PromptCase] = [
     PromptCase(prompt="natural convection cavity 0.9m × 0.9m hot 360K cold 290K air buoyantSimpleFoam laminar", params=_buoyancy(0.9), case_tag="buoy_cavity_09m", expert_notes="0.9m laminar cavity 70K diff."),
     PromptCase(prompt="buoyantSimpleFoam steady 2.2m × 2.2m cavity turbulent natural convection air kOmegaSST", params=_buoyancy(2.2, turb=True), case_tag="buoy_cavity_turb_22m", expert_notes="2.2m turbulent buoyancy."),
 
-    # ── interFoam augmented v2 ────────────────────────────────────────────
+  
     PromptCase(prompt="dam break 1.5m × 1m water column collapse VOF interFoam multiphase", params=_dam_break(1.5, 1.0), case_tag="multiphase_dambreak_15x1", expert_notes="Dam break 1.5m × 1m. interFoam VOF."),
     PromptCase(prompt="dam break simulation 5m × 2.5m large domain water-air interFoam", params=_dam_break(5.0, 2.5), case_tag="multiphase_dambreak_5x25", expert_notes="Dam break 5m × 2.5m. interFoam."),
     PromptCase(prompt="interFoam dam break 6m × 3m water column collapse VOF", params=_dam_break(6.0, 3.0), case_tag="multiphase_dambreak_6x3", expert_notes="Dam break 6m × 3m. interFoam."),
