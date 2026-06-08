@@ -1,19 +1,3 @@
-#!/usr/bin/env python3
-"""Interactive REPL for the OpenFOAM agent.
-
-Loads vLLM once, then accepts prompts in a loop until EOF / 'quit'.
-
-Usage:
-    bash scripts/repl.sh                    # auto-pick GPU
-    GPU=4 bash scripts/repl.sh              # specific GPU
-
-Inside the REPL:
-    prompt> 2D lid-driven cavity Re=1000, 2m square, water
-    ...
-    prompt> flow over NACA0012, chord 0.5m, AoA 5 deg, Re=1e6
-    ...
-    prompt> quit         (or Ctrl-D)
-"""
 from __future__ import annotations
 
 import sys
@@ -21,9 +5,6 @@ import time
 import os
 from pathlib import Path
 
-# Enable arrow-key editing, ↑/↓ history recall, and persistent history.
-# Without this, Python's input() is line-mode-only and arrow keys produce
-# escape sequences instead of moving the cursor.
 try:
     import readline
     _hist = Path.home() / ".openfoam_agent_repl_history"
@@ -35,7 +16,7 @@ try:
     import atexit
     atexit.register(readline.write_history_file, str(_hist))
 except ImportError:
-    pass  # Windows fallback (won't have arrow keys but won't crash)
+    pass 
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
