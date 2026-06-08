@@ -1,19 +1,3 @@
-#!/usr/bin/env python3
-"""
-Test the fine-tuned OpenFOAM agent with sample prompts and score results.
-
-Runs a set of held-out test prompts through the full pipeline (LLM param
-extraction → mesh → case write → simulation) and reports scores.
-
-Usage:
-    conda run -n vllm_env python scripts/test_inference.py [--model PATH]
-
-Options:
-    --model PATH    Model to test (default: config.LLM_MODEL, the fine-tuned merged model)
-    --tag TAG       Only run prompts whose tag starts with TAG
-    --timeout S     Simulation timeout per case (default: 120)
-    --n N           Number of test prompts to run (default: all)
-"""
 from __future__ import annotations
 
 import argparse
@@ -24,9 +8,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-# ── Held-out test prompts (not in training catalog) ─────────────────────────
 TEST_PROMPTS = [
-    # Geometry / solver inference tests (agent must choose correct solver)
+
     ("cavity_holdout",
      "Run a 2D square cavity simulation with a moving lid at Re=1000, 1m domain, air"),
     ("pipe_holdout",
@@ -38,7 +21,7 @@ TEST_PROMPTS = [
     ("channel_holdout",
      "Turbulent 2D channel flow, Re=8000, height=0.08m, length=4m, kOmegaSST"),
 
-    # Solver selection tests (agent must infer solver from physics description)
+
     ("transient_infer",
      "Unsteady vortex shedding behind a 2D cylinder, Re=200, diameter=10cm — capture time-varying wake"),
     ("compressible_infer",
@@ -48,13 +31,13 @@ TEST_PROMPTS = [
     ("multiphase_infer",
      "Water column collapse in a 2D box 4m wide 2m tall, dam break simulation"),
 
-    # Unit / dimension tests
+
     ("units_cm",
      "Pipe flow: diameter=5cm, length=50cm, inlet velocity=10m/s, turbulent air"),
     ("units_mm",
      "Laminar flow in a channel: height=50mm, length=500mm, Re=1500, water"),
 
-    # Expert phrasing tests
+
     ("expert_naca",
      "RANS kOmegaSST simulation of NACA0012, chord=0.5m, AoA=4°, Re=800000, air"),
     ("expert_wedge",
@@ -84,14 +67,14 @@ def main():
     print(f"\n[test] Running {len(prompts)} inference tests")
     print(f"[test] Timeout per case: {args.timeout}s\n")
 
-    # Optionally override model
+
     if args.model:
         import openfoam_agent.config as cfg
         cfg.LLM_MODEL = args.model
         print(f"[test] Using model: {args.model}\n")
 
     from openfoam_agent.agent import OpenFOAMAgent
-    agent = OpenFOAMAgent(use_llm=True)  # LLM ON for inference test
+    agent = OpenFOAMAgent(use_llm=True)  
 
     results = []
     for tag, prompt in prompts:
@@ -115,7 +98,6 @@ def main():
             print(f"       ✗ EXCEPTION: {e}")
             results.append((tag, 0.0, "error", False, elapsed))
 
-    # Summary table
     passed = [r for r in results if r[3]]
     print(f"\n{'='*68}")
     print(f"  Inference Test Results  —  {len(passed)}/{len(results)} PASSED")
