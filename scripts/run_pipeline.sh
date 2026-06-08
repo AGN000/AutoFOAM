@@ -1,6 +1,3 @@
-#!/usr/bin/env bash
-# Full pipeline: wait for data generation → QLoRA training → merge adapter
-# Run inside tmux: tmux new -s foamllm -d && tmux send-keys -t foamllm 'bash scripts/run_pipeline.sh' Enter
 set -euo pipefail
 
 REPO=/data/foamllm3/openfoam_agent
@@ -11,7 +8,7 @@ log() { echo "[$(date '+%H:%M:%S')] $*" | tee -a "$LOG"; }
 
 cd "$REPO"
 
-# ── Step 1: Wait for generation if still running ─────────────────────────────
+
 if [ "$GEN_PID" -gt 0 ] && kill -0 "$GEN_PID" 2>/dev/null; then
     log "Waiting for data generation (PID $GEN_PID) to finish..."
     while kill -0 "$GEN_PID" 2>/dev/null; do
@@ -25,7 +22,7 @@ fi
 N=$(wc -l < data/dataset/expert_train.jsonl 2>/dev/null || echo 0)
 log "Generation complete — $N examples in expert_train.jsonl"
 
-# ── Step 2: QLoRA training ────────────────────────────────────────────────────
+
 log "Starting QLoRA training..."
 conda run -n vllm_env python scripts/train_qlora.py \
     --epochs 3 \
@@ -36,7 +33,6 @@ conda run -n vllm_env python scripts/train_qlora.py \
 
 log "Training complete."
 
-# ── Step 3: Merge adapter ─────────────────────────────────────────────────────
 log "Merging LoRA adapter into base model..."
 conda run -n vllm_env python scripts/merge_adapter.py \
     2>&1 | tee -a "$LOG"
