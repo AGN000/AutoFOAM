@@ -41,7 +41,7 @@ def compute_numerical_policy(params: CFDParams, solver: str) -> NumericalPolicy:
     U = params.inlet_velocity
     char_len = params.diameter or params.width
 
-    # --- Divergence schemes: stability vs. accuracy tradeoff ---
+
     if re < 500:
         pol.div_u = "Gauss linear"
         pol.div_k = "Gauss linear"
@@ -59,7 +59,7 @@ def compute_numerical_policy(params: CFDParams, solver: str) -> NumericalPolicy:
         pol.div_k = "Gauss upwind"
         pol.div_omega_eps = "Gauss upwind"
 
-    # --- Relaxation: tighter for higher Re (harder to converge) ---
+
     if re < 1_000:
         pol.relax_p, pol.relax_U = 0.6, 0.8
         pol.relax_k = pol.relax_omega_eps = 0.7
@@ -73,13 +73,13 @@ def compute_numerical_policy(params: CFDParams, solver: str) -> NumericalPolicy:
         pol.relax_p, pol.relax_U = 0.2, 0.5
         pol.relax_k = pol.relax_omega_eps = 0.3
 
-    # --- y+ target (wall-normal first cell size) ---
+
     if params.turbulence_model == TurbulenceModel.K_EPSILON:
         pol.y_plus_target = 30.0  # wall-function regime
     else:
         pol.y_plus_target = 1.0  # wall-resolved (kOmegaSST / laminar)
 
-    # Estimate friction velocity: u_tau = U * sqrt(Cf/2)
+
     if re > 4_000:
         cf = 0.026 * re ** (-1.0 / 7.0)  # turbulent pipe/flat-plate estimate
     else:
@@ -94,7 +94,7 @@ def compute_numerical_policy(params: CFDParams, solver: str) -> NumericalPolicy:
     else:
         pol.first_cell_height = char_len / 100.0
 
-    # BL layers: grow until covering ~15% of char_len
+
     bl_target = 0.15 * char_len
     gr = 1.3
     pol.bl_growth_rate = gr
@@ -105,17 +105,16 @@ def compute_numerical_policy(params: CFDParams, solver: str) -> NumericalPolicy:
     else:
         pol.bl_layers = 5
 
-    # --- PIMPLE / PISO correctors ---
+
     if solver in ("pimpleFoam", "rhoPimpleFoam", "buoyantPimpleFoam"):
         pol.n_correctors = 3 if re > 50_000 else 2
         pol.n_outer_correctors = 3 if re > 100_000 else 2
     elif solver == "icoFoam":
         pol.n_correctors = 4
         pol.n_outer_correctors = 1
-    # Non-orthogonal correctors — keep at 2 for safety
+  
     pol.n_non_ortho_correctors = 2
 
-    # --- Solver tolerances ---
     if re < 500:
         pol.p_tolerance = 1e-8
         pol.U_tolerance = 1e-7
