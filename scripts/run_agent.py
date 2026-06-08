@@ -1,6 +1,3 @@
-#!/usr/bin/env python3
-"""CLI entry point for the OpenFOAM AI agent."""
-
 import sys
 import argparse
 import json
