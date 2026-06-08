@@ -1,18 +1,3 @@
-#!/usr/bin/env python3
-"""
-Merge QLoRA adapter into the base model and save for vLLM inference.
-
-After fine-tuning with train_qlora.py, run this to produce a merged model
-that vLLM can load directly (no adapter overhead at inference time).
-
-Usage:
-    conda run -n vllm_env python scripts/merge_adapter.py
-
-Options:
-    --adapter DIR   LoRA adapter directory (default: data/checkpoints/.../final_adapter)
-    --output DIR    Merged model output (default: data/checkpoints/qwen_coder_14b_merged)
-    --push HF_REPO  Optional: push merged model to HuggingFace Hub
-"""
 from __future__ import annotations
 
 import argparse
