@@ -56,8 +56,7 @@ class GmshMeshGenerator:
     def generate(self, params: CFDParams, case_dir: Path, policy=None) -> Path:
         case_dir.mkdir(parents=True, exist_ok=True)
 
-        # If vllm is already loaded in this process, gmsh's nanobind will conflict
-        # with vllm's forked engine core. Run gmsh in a clean subprocess instead.
+
         if not self._subprocess_mode and "vllm" in sys.modules:
             return self._generate_in_subprocess(params, case_dir, policy)
 
@@ -121,9 +120,7 @@ class GmshMeshGenerator:
             raise RuntimeError(f"gmsh subprocess failed:\n{result.stderr[-2000:]}")
         return case_dir / "constant" / "polyMesh"
 
-    # ------------------------------------------------------------------ #
-    #  Shared mesh-sizing helper (the "good procedure" from PROJECT_STATUS)
-    # ------------------------------------------------------------------ #
+
 
     def _mesh_sizing(self, params: CFDParams, char_len: float) -> tuple[float, float]:
         """Return (size_near_wall, size_bulk) following the Distance/Threshold
@@ -158,9 +155,7 @@ class GmshMeshGenerator:
         gmsh.option.setNumber("Mesh.CharacteristicLengthMin", size_near_wall)
         gmsh.option.setNumber("Mesh.CharacteristicLengthMax", size_bulk)
 
-    # ------------------------------------------------------------------ #
-    #  Geometry builders
-    # ------------------------------------------------------------------ #
+
 
     def _build_box(self, params: CFDParams, msh_file: Path):
         import gmsh
@@ -173,7 +168,7 @@ class GmshMeshGenerator:
 
         L, W = params.length, params.width
         depth = 0.001 if not params.is_3d else params.height
-        # char_len for sizing = cross-stream dimension (W for channel, H for 3D duct)
+
         char_len = W
 
         try:
@@ -199,7 +194,7 @@ class GmshMeshGenerator:
                 if wall_tags:
                     gmsh.model.addPhysicalGroup(2, wall_tags, name="walls")
                 gmsh.model.addPhysicalGroup(3, [vol], name="fluid")
-                # Wall refinement for 3D turbulent duct
+            
                 if wall_tags:
                     self._apply_wall_field(wall_tags, char_len, dist_max_frac=0.5)
                 gmsh.model.mesh.generate(3)
@@ -239,7 +234,7 @@ class GmshMeshGenerator:
                 if re > 4000 and wall_tags:
                     self._apply_wall_field(wall_tags, char_len, dist_max_frac=0.4)
                 else:
-                    # Uniform mesh size for laminar 2D box
+                  
                     lc = min(W / 20, L / 50)
                     gmsh.option.setNumber("Mesh.CharacteristicLengthMax", lc)
                 gmsh.model.mesh.generate(3)
@@ -259,7 +254,7 @@ class GmshMeshGenerator:
 
         L, W = params.length, params.width
         depth = 0.001
-        # Re-aware mesh density: 40 cells at Re=100, 80 at Re=3200, cap at 100
+      
         re = params.reynolds_number or 100
         n_cells = int(min(max(40 * (re / 100) ** 0.25, 40), 100))
         lc = min(L, W) / n_cells
@@ -295,10 +290,10 @@ class GmshMeshGenerator:
             gmsh.model.addPhysicalGroup(2, fixed_tags, name="fixedWalls")
             gmsh.model.addPhysicalGroup(3, [vol_tag], name="fluid")
 
-            # Near-wall refinement for higher Re using Distance/Threshold on walls
+           
             all_wall_tags = moving_tags + fixed_tags
             if re > 500 and all_wall_tags:
-                # Finer near the lid and fixed walls — separation scale ~ L/Re^0.5
+               
                 size_wall = max(lc * 0.4, L / 200)
                 dist_f = gmsh.model.mesh.field.add("Distance")
                 gmsh.model.mesh.field.setNumbers(dist_f, "SurfacesList", all_wall_tags)
@@ -331,12 +326,7 @@ class GmshMeshGenerator:
         R = D / 2.0
         depth = 0.001
 
-        # Domain extents in cylinder diameters. These are the standard
-        # incompressible-cylinder benchmark proportions (DNS / VIV literature):
-        #   upstream   ≥ 10 D   to fully develop the freestream
-        #   downstream ≥ 25 D   to capture the Kármán wake
-        #   crossflow  ≥ 10 D   each side, so blockage stays ≤ 5 %
-        # We honour user overrides only if they exceed these minimums.
+
         upstream   = max(10.0 * D, 10.0 * D)
         downstream = max(params.length, 25.0 * D)
         halfwidth  = max(params.width / 2.0, 10.0 * D)
@@ -354,7 +344,7 @@ class GmshMeshGenerator:
             surfs = gmsh.model.occ.getEntities(2)
             surf_tag = surfs[0][1] if surfs else 1
 
-            # Extrude
+         
             ext = gmsh.model.occ.extrude(
                 [(2, surf_tag)], 0, 0, depth, numElements=[1], recombine=True
             )
@@ -395,7 +385,7 @@ class GmshMeshGenerator:
                 gmsh.model.addPhysicalGroup(2, cyl_tags, name="cylinder")
             gmsh.model.addPhysicalGroup(3, [vol_tag], name="fluid")
 
-            # Physics-aware near-wall refinement
+     
             pol = getattr(self, "_policy", None)
             size_min = pol.first_cell_height if pol else D / 20
             size_min = max(size_min, D / 50)  # avoid degenerate cells
@@ -450,13 +440,9 @@ class GmshMeshGenerator:
                 gmsh.model.addPhysicalGroup(2, wall_tags, name="wall")
             gmsh.model.addPhysicalGroup(3, [cyl], name="fluid")
 
-            # Physics-aware mesh sizing from numerical policy.
-            # For unstructured 3D meshes, y+=1 is impractically fine.
-            # Clamp to D/30 minimum to keep cell count manageable.
             pol = getattr(self, "_policy", None)
             size_near_wall = pol.first_cell_height if pol else D / 10
-            # For unstructured 3D, y+-resolved sizing creates 100k+ cells → timeout.
-            # Wall-modeled approach (y+~30–100) keeps cells <30k and runs in time.
+     
             size_near_wall = max(size_near_wall, D / 10)
             size_bulk = D / 3
 
@@ -508,8 +494,8 @@ class GmshMeshGenerator:
         size_bulk      = max(H / 6, size_near_wall * 4)
 
         try:
-            # L-shaped domain: upstream channel + downstream expansion
-            lc_bg = size_bulk   # background size for point placement
+         
+            lc_bg = size_bulk   
             pts = [
                 gmsh.model.occ.addPoint(-L_up, Hin, 0, lc_bg),  # p1: inlet top
                 gmsh.model.occ.addPoint(0,     Hin, 0, size_corner),  # p2: step top
@@ -555,7 +541,7 @@ class GmshMeshGenerator:
                 gmsh.model.addPhysicalGroup(2, wall_tags, name="walls")
             gmsh.model.addPhysicalGroup(3, [vol_tag], name="fluid")
 
-            # Distance/Threshold: refine near all walls + tightest at step corner
+         
             if wall_tags:
                 dist_f = gmsh.model.mesh.field.add("Distance")
                 gmsh.model.mesh.field.setNumbers(dist_f, "SurfacesList", wall_tags)
@@ -566,7 +552,7 @@ class GmshMeshGenerator:
                 gmsh.model.mesh.field.setNumber(th_f, "DistMin", 0)
                 gmsh.model.mesh.field.setNumber(th_f, "DistMax", Hin * 0.4)
 
-                # Extra Point field at step corner (0, 0) for extra refinement
+            
                 corner_f = gmsh.model.mesh.field.add("Ball")
                 gmsh.model.mesh.field.setNumber(corner_f, "Radius", Hin * 0.3)
                 gmsh.model.mesh.field.setNumber(corner_f, "VIn", size_corner)
@@ -575,7 +561,7 @@ class GmshMeshGenerator:
                 gmsh.model.mesh.field.setNumber(corner_f, "YCenter", 0.0)
                 gmsh.model.mesh.field.setNumber(corner_f, "ZCenter", depth / 2)
 
-                # Min field takes finest value at each point
+              
                 min_f = gmsh.model.mesh.field.add("Min")
                 gmsh.model.mesh.field.setNumbers(min_f, "FieldsList", [th_f, corner_f])
                 gmsh.model.mesh.field.setAsBackgroundMesh(min_f)
@@ -603,12 +589,11 @@ class GmshMeshGenerator:
         aoa = params.angle_of_attack or 0.0
         depth = 0.001
 
-        # Far-field box: 20c x 20c centered at c/4
+   
         box_x0, box_x1 = -10 * chord, 20 * chord
         box_y0, box_y1 = -10 * chord, 10 * chord
 
-        # Parse NACA 4-digit code from extraction_notes / refined params.
-        # Format MPXX → m=M%, p=P/10 chord, t=XX/100 thickness.
+
         m = re.search(r"naca\s*(\d{4})", (params.extraction_notes or "").lower())
         if m:
             code = m.group(1)
@@ -618,7 +603,7 @@ class GmshMeshGenerator:
         p_camber = int(code[1]) / 10.0           # location of max camber
         t_thick  = int(code[2:4]) / 100.0        # max thickness as fraction of chord
 
-        # NACA 4-digit coordinates with cosine-spaced x stations
+  
         n_pts = 80
         pts_upper, pts_lower = [], []
         for i in range(n_pts + 1):
@@ -631,7 +616,7 @@ class GmshMeshGenerator:
                 + 0.2843 * xc ** 3
                 - 0.1015 * xc ** 4
             )
-            # Mean camber line (zero for symmetric NACA 00XX)
+         
             if m_camber > 0 and 0 < p_camber < 1:
                 if xc < p_camber:
                     yc = chord * m_camber / (p_camber ** 2) * (
@@ -711,9 +696,7 @@ class GmshMeshGenerator:
                 gmsh.model.addPhysicalGroup(2, airfoil_tags, name="airfoil")
             gmsh.model.addPhysicalGroup(3, [vol_tag], name="fluid")
 
-            # Refinement near airfoil — policy-aware sizing
-            # Good procedure: size_near_wall from NumericalPolicy, clamped to chord/50
-            # to prevent 100k+ cells at high Re
+
             if airfoil_tags:
                 pol = getattr(self, "_policy", None)
                 size_surface = pol.first_cell_height if pol else chord / 50
@@ -739,14 +722,7 @@ class GmshMeshGenerator:
             gmsh.finalize()
 
     def _build_wedge(self, params: CFDParams, msh_file: Path):
-        """5-degree axisymmetric wedge for OpenFOAM wedge BC.
 
-        Good procedure:
-        - Revolve xy-plane rectangle 5° around x-axis
-        - front face (θ=0): all z ≈ 0  → distinguished by zmax < ε
-        - back  face (θ=5°): has z > 0 → zmax > ε
-        - Distance/Threshold wall refinement near r=R boundary
-        """
         import gmsh
         import math
         gmsh.initialize()
@@ -765,7 +741,7 @@ class GmshMeshGenerator:
         size_bulk = max(R / 3, size_near_wall * 4)
 
         try:
-            # Rectangular rz-profile in xy-plane (z=0)
+       
             p1 = gmsh.model.occ.addPoint(0, 0, 0, size_near_wall)
             p2 = gmsh.model.occ.addPoint(L, 0, 0, size_near_wall)
             p3 = gmsh.model.occ.addPoint(L, R, 0, size_near_wall)
@@ -778,7 +754,7 @@ class GmshMeshGenerator:
             surf = gmsh.model.occ.addPlaneSurface([loop])
             gmsh.model.occ.synchronize()
 
-            # Revolve 5 degrees around x-axis
+       
             ext = gmsh.model.occ.revolve(
                 [(2, surf)], 0, 0, 0, 1, 0, 0, math.radians(5)
             )
@@ -803,16 +779,16 @@ class GmshMeshGenerator:
                 elif xspan < 1e-6 and xmin > L - 0.01:
                     outlet_tags.append(tag)
                 elif ymax_abs < z_tol * 10:
-                    # Near y=0 and z=0 → axis
+                 
                     axis_tags.append(tag)
                 elif ymax_abs > R * 0.9:
-                    # Outer wall surface (r ≈ R)
+                  
                     wall_tags.append(tag)
                 elif zmax < z_tol:
-                    # All z ≈ 0 → front face (θ=0, original xy-plane)
+                   
                     front_tags.append(tag)
                 else:
-                    # Has z > 0 → back face (θ=5°, revolved face)
+                
                     back_tags.append(tag)
 
             if inlet_tags:
@@ -829,7 +805,7 @@ class GmshMeshGenerator:
                 gmsh.model.addPhysicalGroup(2, back_tags, name="back")
             gmsh.model.addPhysicalGroup(3, [vol_tag], name="fluid")
 
-            # Distance/Threshold wall refinement (pipe near-wall sizing)
+  
             if wall_tags:
                 dist_f = gmsh.model.mesh.field.add("Distance")
                 gmsh.model.mesh.field.setNumbers(dist_f, "SurfacesList", wall_tags)
@@ -848,18 +824,10 @@ class GmshMeshGenerator:
         finally:
             gmsh.finalize()
 
-    # ------------------------------------------------------------------ #
-    #  New builders (NACA 4-digit handled via _build_airfoil_box parsing
-    #  the prompt; the four below cover periodic hill, S-bend, diffuser,
-    #  and 3D sphere-in-box). All 2D builders extrude a thin slab so the
-    #  case is OpenFOAM-2D-compatible (frontAndBack empty patches).
-    # ------------------------------------------------------------------ #
+
 
     def _build_pehill(self, params: CFDParams, msh_file: Path):
-        """Wu / Breuer periodic-hill benchmark, 2D extruded.
-        Hill profile follows the polynomial pieces of Mellen et al.
-        Patches: bottomWall (curved), topWall, inlet, outlet, frontAndBack.
-        """
+
         import gmsh
         import math
         gmsh.initialize()
@@ -1000,8 +968,7 @@ class GmshMeshGenerator:
         size_bulk = max(H / 4, size_near_wall * 4)
 
         try:
-            # Centreline: straight inlet leg, sinusoidal S, straight outlet leg.
-            # Single sine period crosses zero three times → one full "S".
+
             n_seg = 60
             cl = []
             for i in range(n_seg + 1):
@@ -1015,9 +982,6 @@ class GmshMeshGenerator:
                     y = A_amp * math.sin(2 * math.pi * t)
                 cl.append((x, y))
 
-            # Build top + bottom walls offset by ±H from centreline.
-            # Use forward / backward differences at endpoints (central inside)
-            # so the local tangent is well-defined and the offset is correct.
             top, bot = [], []
             for i in range(len(cl)):
                 if i == 0:
@@ -1170,11 +1134,6 @@ class GmshMeshGenerator:
             gmsh.finalize()
 
     def _build_sphere_3d(self, params: CFDParams, msh_file: Path):
-        """3D sphere in a rectangular far-field box.
-        Patches: inlet, outlet, sphere, farfield (top/bottom/side far-field).
-        Domain scaled by Re: laminar (Re<1000) uses 5D/15D, turbulent 10D/25D.
-        Three-zone refinement: sphere surface → near-wake box → far field.
-        """
         import gmsh
         gmsh.initialize()
         gmsh.option.setNumber("General.Terminal", 0)
@@ -1197,7 +1156,6 @@ class GmshMeshGenerator:
             upstream, downstream, half = 10 * D, 25 * D, 10 * D
         x0, x1 = -upstream, downstream
 
-        # Mesh sizing: D/20 near sphere for laminar, D/15 for turbulent (WF)
         size_surface = D / 20 if re < 4000 else D / 15
         size_surface = max(size_surface, D / 30)
         size_wake    = D * 0.5          # near-wake box refinement
@@ -1240,7 +1198,7 @@ class GmshMeshGenerator:
             if ff_tags:     gmsh.model.addPhysicalGroup(2, ff_tags,     name="farfield")
             gmsh.model.addPhysicalGroup(3, [vol_tag], name="fluid")
 
-            # Two-zone background mesh: sphere surface + wake box; Min picks finest
+
             fields = []
             if sph_tags:
                 fd = gmsh.model.mesh.field.add("Distance")
@@ -1253,7 +1211,7 @@ class GmshMeshGenerator:
                 gmsh.model.mesh.field.setNumber(ft, "DistMax", D * 3)
                 fields.append(ft)
 
-                # Wake box: refine downstream of sphere to capture recirculation
+
                 fb = gmsh.model.mesh.field.add("Box")
                 gmsh.model.mesh.field.setNumber(fb, "VIn",  size_wake)
                 gmsh.model.mesh.field.setNumber(fb, "VOut", size_bulk)
@@ -1279,9 +1237,6 @@ class GmshMeshGenerator:
         finally:
             gmsh.finalize()
 
-    # ------------------------------------------------------------------ #
-    #  Second batch: Ahmed body, multi-hill, T-junction, CD nozzle, elbow
-    # ------------------------------------------------------------------ #
 
     def _build_ahmed_body(self, params: CFDParams, msh_file: Path):
         """Ahmed body — automotive bluff-body benchmark, 3D.
@@ -1317,7 +1272,7 @@ class GmshMeshGenerator:
         size_bulk = max(H / 2, size_near_wall * 6)
 
         try:
-            # 2D side profile of body (xy plane, z=0)
+
             pts = [(0, 0), (L, 0), (L, H_rear),
                    (L - L_slant, H), (0, H)]
             gmsh_pts = [gmsh.model.occ.addPoint(x, y, -W / 2, size_near_wall)
@@ -1407,7 +1362,6 @@ class GmshMeshGenerator:
         size_near_wall = max(size_near_wall, H / 30)
         size_bulk = max(H / 5, size_near_wall * 4)
 
-        # Mellen profile for one period (x in [0, 9H], shifted/repeated).
         def hill_y_one(x):
             xs = abs(x) / H
             if xs > 9.0: return 0.0
@@ -1510,10 +1464,6 @@ class GmshMeshGenerator:
         size_near_wall = max(size_near_wall, H / 15)
         size_bulk = max(H / 4, size_near_wall * 4)
 
-        # Polygon walks the boundary clockwise:
-        # main inlet bottom-left → main bottom → outlet bottom-right
-        # → outlet top-right → branch right wall → branch top → branch left
-        # → main top-right of branch → main top → main top-left → close
         x_branch_l = L * 0.5 - H
         x_branch_r = L * 0.5 + H
         y_branch_top = H + Lb
@@ -1669,10 +1619,6 @@ class GmshMeshGenerator:
         size_near_wall = max(size_near_wall, H / 15)
         size_bulk = max(H / 4, size_near_wall * 4)
 
-        # L-shaped polygon (clockwise):
-        # inlet at bottom of vertical leg (x=0, y=-Leg → y=2H)
-        # bend → horizontal leg (y in [H,2H], x in [0, Leg])
-        # outlet at right end (x=Leg, y in [H,2H])
         try:
             pts = [
                 (0,   -Leg),     # inlet bottom
@@ -1725,12 +1671,8 @@ class GmshMeshGenerator:
         finally:
             gmsh.finalize()
 
-    # ------------------------------------------------------------------ #
-    #  Post-processing
-    # ------------------------------------------------------------------ #
 
     def _run_gmsh_to_foam(self, msh_file: Path, case_dir: Path):
-        # gmshToFoam requires system/controlDict to exist
         (case_dir / "system").mkdir(parents=True, exist_ok=True)
         ctrl = case_dir / "system" / "controlDict"
         if not ctrl.exists():
@@ -1770,13 +1712,13 @@ class GmshMeshGenerator:
 
         for line in lines:
             stripped = line.strip()
-            # Detect patch name lines (single word before opening brace context)
+   
             if stripped and not stripped.startswith("//") and not stripped.startswith("("):
                 words = stripped.split()
                 if len(words) == 1 and words[0] not in ("{", "}", "FoamFile"):
                     current_patch = words[0]
 
-            # Fix type lines
+
             if stripped.startswith("type") and current_patch:
                 correct_type = _patch_type(current_patch)
                 indent = line[: len(line) - len(line.lstrip())]
