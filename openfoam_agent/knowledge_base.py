@@ -1,11 +1,4 @@
-"""
-Canonical OpenFOAM expert knowledge base.
 
-Each entry is a structured document describing the physics, solver settings,
-boundary conditions, and mesh strategy for one CFD case type.  These are
-injected into ChromaDB alongside the tutorial cases so that RAG always
-returns a relevant expert reference even when no tutorial exactly matches.
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -18,13 +11,9 @@ class KnowledgeEntry:
     content: str         # text indexed into ChromaDB
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# One entry per geometry type + key physics variant
-# ─────────────────────────────────────────────────────────────────────────────
 
 KNOWLEDGE_BASE: list[KnowledgeEntry] = [
 
-    # ── LID-DRIVEN CAVITY ────────────────────────────────────────────────────
     KnowledgeEntry(
         doc_id="kb_lid_driven_cavity",
         case_name="KnowledgeBase_LidDrivenCavity",
@@ -115,7 +104,7 @@ Numerical schemes (turbulent):
 """,
     ),
 
-    # ── FLOW OVER CYLINDER ───────────────────────────────────────────────────
+
     KnowledgeEntry(
         doc_id="kb_cylinder_flow",
         case_name="KnowledgeBase_CylinderFlow",
@@ -155,7 +144,7 @@ Numerical schemes (laminar, Re<500):
 """,
     ),
 
-    # ── CHANNEL FLOW ─────────────────────────────────────────────────────────
+
     KnowledgeEntry(
         doc_id="kb_channel_flow",
         case_name="KnowledgeBase_ChannelFlow",
@@ -192,7 +181,6 @@ Turbulent wall BCs: kqRWallFunction, omegaWallFunction, nutkWallFunction.
 """,
     ),
 
-    # ── BACKWARD-FACING STEP ─────────────────────────────────────────────────
     KnowledgeEntry(
         doc_id="kb_bfs",
         case_name="KnowledgeBase_BackwardFacingStep",
@@ -232,7 +220,7 @@ Numerical schemes:
 """,
     ),
 
-    # ── AIRFOIL FLOW ─────────────────────────────────────────────────────────
+
     KnowledgeEntry(
         doc_id="kb_airfoil",
         case_name="KnowledgeBase_AirfoilFlow",
@@ -280,7 +268,7 @@ Numerical schemes:
 """,
     ),
 
-    # ── WEDGE (AXISYMMETRIC PIPE) ─────────────────────────────────────────────
+
     KnowledgeEntry(
         doc_id="kb_wedge",
         case_name="KnowledgeBase_WedgeAxisymmetric",
@@ -326,7 +314,7 @@ Validation: Laminar case → parabolic u(r) = 2·U_avg·(1-(r/R)^2).
 """,
     ),
 
-    # ── TURBULENT FLAT PLATE / BOX ────────────────────────────────────────────
+
     KnowledgeEntry(
         doc_id="kb_flat_plate",
         case_name="KnowledgeBase_FlatPlateBox",
@@ -361,7 +349,7 @@ For turbulent: Re_L > 5e5, use kOmegaSST with wall functions.
 """,
     ),
 
-    # ── BUOYANCY-DRIVEN CAVITY ────────────────────────────────────────────────
+
     KnowledgeEntry(
         doc_id="kb_buoyancy_cavity",
         case_name="KnowledgeBase_BuoyancyCavity",
@@ -400,7 +388,7 @@ Validation: Nusselt number Nu vs Ra correlation (De Vahl Davis 1983).
 """,
     ),
 
-    # ── TRANSIENT CYLINDER VORTEX SHEDDING ────────────────────────────────────
+
     KnowledgeEntry(
         doc_id="kb_cylinder_transient",
         case_name="KnowledgeBase_VortexShedding",
