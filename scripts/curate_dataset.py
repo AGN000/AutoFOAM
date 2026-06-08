@@ -1,22 +1,5 @@
 #!/usr/bin/env python3
-"""Curate the rolling capture file (data/dataset/dataset.json) into a
-training-ready Qwen-chat JSONL (data/dataset/expert_train.jsonl).
 
-Steps:
-  1. Load every TrainingExample from dataset.json (score >= 0.5 captures).
-  2. De-duplicate by (prompt, solver, params hash) — keep the highest score.
-  3. Drop rows below --min-score (default: config.MIN_RETRAIN_SCORE = 0.65).
-  4. Optional: mine retry pairs from attempts.jsonl
-     (low-score first attempt + higher-score retry on the same prompt) →
-     emit them as a sidecar JSONL (--pairs-out) for future DPO training.
-  5. Format each surviving row with training.format_example() (Qwen chat
-     template) and write {"text": ..., "score": ...} per line.
-
-Usage:
-    python scripts/curate_dataset.py
-    python scripts/curate_dataset.py --min-score 0.7 --max-examples 1000
-    python scripts/curate_dataset.py --pairs-out data/dataset/dpo_pairs.jsonl
-"""
 from __future__ import annotations
 
 import argparse
@@ -44,9 +27,7 @@ def parse_args() -> argparse.Namespace:
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--in", dest="in_file", type=Path,
                    default=DATASET_DIR / "dataset.json")
-    # NOTE: default output is intentionally NOT data/dataset/expert_train.jsonl
-    # — that path is the frozen v1 anchor corpus (anchor_v1_402.jsonl) and must
-    # never be overwritten. Use a versioned default.
+
     p.add_argument("--out", type=Path,
                    default=DATASET_DIR / "curated_latest.jsonl")
     p.add_argument("--min-score", type=float, default=MIN_RETRAIN_SCORE,
@@ -69,12 +50,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def _params_hash(params_dict: dict) -> str:
-    """Stable hash of the params dict for de-duplication.
 
-    We hash on the physics-relevant subset (geometry, solver-defining flags,
-    Re) so that two semantically-identical runs collapse even if they differ
-    on cosmetic fields like extraction_notes or end_time.
-    """
     keys = ("geometry_type", "is_3d", "is_transient", "is_compressible",
             "has_heat_transfer", "is_multiphase", "flow_regime",
             "turbulence_model", "reynolds_number")
@@ -84,7 +60,7 @@ def _params_hash(params_dict: dict) -> str:
 
 
 def dedupe(examples: list[TrainingExample]) -> list[TrainingExample]:
-    """Keep the highest-score entry for each (prompt, solver, params_hash)."""
+
     best: dict[tuple, TrainingExample] = {}
     for ex in examples:
         key = (ex.prompt.strip().lower(),
@@ -96,8 +72,7 @@ def dedupe(examples: list[TrainingExample]) -> list[TrainingExample]:
 
 
 def _row_to_training_example(row: dict) -> TrainingExample:
-    """Build a TrainingExample stub from an attempts.jsonl row so we can
-    reuse _build_expert_analysis() for the DPO response side."""
+
     return TrainingExample(
         prompt=row["prompt"],
         refined_prompt=row.get("refined_prompt", row["prompt"]),
@@ -114,18 +89,7 @@ def _row_to_training_example(row: dict) -> TrainingExample:
 
 
 def mine_retry_pairs(attempts_path: Path) -> list[dict]:
-    """Find (low-score attempt, higher-score retry) on the same prompt.
 
-    Emits TRL-DPO-ready rows:
-      {"prompt": <Qwen-chat prefix up to assistant tag>,
-       "chosen":   <full assistant response of high-score attempt>,
-       "rejected": <full assistant response of low-score attempt>,
-       "chosen_score": ..., "rejected_score": ...,
-       "solver_chosen": ..., "solver_rejected": ...}
-
-    Only emits pairs where the score gap is meaningful (>= 0.2) and the
-    chosen attempt crossed the success threshold (score >= 0.5).
-    """
     if not attempts_path.exists():
         return []
     by_prompt: dict[str, list[dict]] = defaultdict(list)
@@ -208,11 +172,7 @@ def main():
         print(f"[curate] Score range: {min(scores):.2f} – {max(scores):.2f}  "
               f"mean={sum(scores)/len(scores):.2f}")
 
-    # ── Anchor mix-in (Layer 5) ──────────────────────────────────────────────
-    # Append random rows from the frozen v1 anchor so the model can't drift
-    # away from its original training corpus over many evolve cycles.
-    # Target ratio: anchor_fraction = n_anchor / (n_anchor + n_new)
-    # → n_anchor = n_new * f / (1 - f).
+
     if args.anchor is not None and args.anchor_fraction > 0:
         if not args.anchor.exists():
             print(f"[curate] WARNING: anchor file not found at {args.anchor} — skipping mix-in.")
@@ -238,7 +198,7 @@ def main():
                       f"from {args.anchor.name} "
                       f"(target {f:.0%}, actual {actual_frac:.0%} of {total} total)")
 
-    # ── Retry-pair mining for future DPO ─────────────────────────────────────
+
     if args.pairs_out is not None:
         pairs = mine_retry_pairs(args.attempts)
         args.pairs_out.parent.mkdir(parents=True, exist_ok=True)
