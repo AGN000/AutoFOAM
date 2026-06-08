@@ -1,13 +1,4 @@
-"""Self-correction context builder for the agent retry loop.
 
-Extracts structured failure signals from a RunResult + score and builds
-an enriched retry context that goes back into the next attempt's prompt.
-
-Used by agent.run() in place of failure_diagnosis.build_retry_context()
-when the score falls below RETRY_SCORE_THRESHOLD. The richer context
-(scorer feedback string + log tail + named cause) is what lets the LLM
-actually fix mistakes on attempt N+1 instead of repeating them.
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -30,18 +21,13 @@ class CorrectionSignals:
 
 
 def _parse_mass_imbalance(log: str) -> float:
-    """Pull the worst-case continuity error from the solver log.
 
-    Looks for the OpenFOAM 'time step continuity errors : sum local = X,
-    global = Y, cumulative = Z' line. Returns max(|local|) over the run,
-    or float('nan') if no such line was found.
-    """
     worst = float("nan")
     for line in log.splitlines():
         low = line.lower()
         if "continuity errors" not in low:
             continue
-        # "sum local = 1.234e-05, global = ..."
+      
         for token in ("sum local =", "local =", "global ="):
             idx = low.find(token)
             if idx < 0:
@@ -66,7 +52,7 @@ def _parse_mass_imbalance(log: str) -> float:
 
 
 def _is_diverged(run_result: RunResult) -> bool:
-    """Residuals exploded, or last value > 10 (the failure_diagnosis threshold)."""
+
     if not run_result.final_residuals:
         return False
     return max(run_result.final_residuals.values()) > 10.0
@@ -81,8 +67,7 @@ def harvest(run_result: RunResult, score: float) -> CorrectionSignals:
     has_fp = ("floating point" in combined or "sigfpe" in combined
               or "overflow" in combined)
     diag = diagnose(run_result, score)
-    # Re-use the existing scorer feedback by re-running compute_reward only
-    # if we don't already have it; the agent already has it as `feedback`.
+
     return CorrectionSignals(
         diverged=_is_diverged(run_result),
         mass_imbalance=_parse_mass_imbalance(log),
@@ -118,19 +103,7 @@ def build_context(
     rag_examples: list[str] | None = None,
     rag_with_content: list[dict] | None = None,
 ) -> str:
-    """Build the next-attempt prompt suffix.
 
-    Combines:
-      (1) the existing failure_diagnosis hints (relaxation, BC fixes, etc.),
-      (2) the scorer's textual feedback,
-      (3) structured signals (mass-imbalance number, divergence flag),
-      (4) last 40 lines of solver log,
-      (5) (Stream A) full controlDict / fvSchemes / boundary-conditions text
-          from the top-K matched tutorial cases, so the retry param-extractor
-          sees adaptable templates instead of just case names.
-
-    The LLM sees this exact text appended after the original prompt.
-    """
     diag = diagnose(run_result, score)
     base = build_retry_context(diag, attempt, score, rag_examples)
     signals = harvest(run_result, score)
@@ -160,10 +133,7 @@ def build_context(
         extras.append(signals.log_tail)
         extras.append("```")
 
-    # Stream A: include full file content from similar tutorial cases.
-    # The param extractor's LLM call will see this and can extract better
-    # params (e.g. recognise the right BC patch naming, the right turbulence
-    # quantities, the right fvSchemes choices for this regime).
+
     if rag_with_content:
         try:
             from .rag import TutorialRAG
