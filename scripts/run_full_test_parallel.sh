@@ -1,5 +1,3 @@
-#!/usr/bin/env bash
-# Launch full-catalog inference test in parallel — one shard per GPU.
 set -u
 cd /data/foamllm3/openfoam_agent
 
