@@ -1,16 +1,3 @@
-#!/usr/bin/env python3
-"""
-Run the full PROMPT_CATALOG through the fine-tuned model end-to-end,
-sharded across GPUs in parallel. Each catalog prompt is sent to the LLM
-(param extraction → solver pick → mesh → case write → solver run for
-end_time=3 iterations). Results aggregated to one JSONL.
-
-Usage:
-    bash scripts/run_full_test_parallel.sh [--gpus 0,1,2,3,4,5,6,7] [--end-time 3] [--timeout 120]
-
-Or run a single shard directly (used internally by the launcher):
-    python scripts/full_test_parallel.py --shard I/N --gpu G --end-time 3 --timeout 120 --out PATH
-"""
 from __future__ import annotations
 
 import argparse
@@ -69,7 +56,7 @@ def main():
           flush=True)
 
     agent = OpenFOAMAgent(use_llm=True)
-    # Don't append to shared dataset.json from parallel workers
+
     agent._save_to_dataset = lambda *a, **kw: None  # type: ignore
 
     out_path = Path(args.out)
@@ -102,8 +89,7 @@ def main():
                     elapsed=time.time() - t0,
                 )
                 if args.with_files:
-                    # Snapshot case files + residuals for downstream
-                    # per-prompt diff (regression_diff.py).
+
                     rec["final_residuals"] = r.residuals
                     rec["case_files_text"] = (
                         agent._read_case_files(__import__("pathlib").Path(r.case_dir))
