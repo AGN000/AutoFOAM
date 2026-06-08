@@ -1,19 +1,3 @@
-#!/usr/bin/env python3
-"""
-Validate the full RAG → mesh → case-write → solver pipeline for all
-catalog prompt cases.
-
-Each case runs OpenFOAM for only 2 iterations (end_time=2) — enough to confirm
-the solver starts cleanly with no FOAM FATAL ERROR.  Full convergence is NOT
-the goal here; a score of any value with no crash is a PASS.
-
-Usage:
-    conda run -n vllm_env python scripts/validate_rag_pipeline.py [--tag TAG]
-
-Options:
-    --tag TAG   Only run cases whose case_tag starts with TAG (e.g. "pipe").
-    --timeout S Simulation timeout in seconds per case (default 60).
-"""
 from __future__ import annotations
 
 import argparse
@@ -34,7 +18,7 @@ class ValidationResult:
     prompt: str
     solver: str
     rag_hits: list[str]
-    started: bool        # OpenFOAM launched without FATAL ERROR
+    started: bool        
     score: float
     error: str
     elapsed: float
@@ -69,7 +53,7 @@ def validate_case(
     )
     elapsed = time.time() - t0
 
-    # "started" = no FOAM FATAL ERROR (even partial run is fine for validation)
+
     fatal = "FOAM FATAL" in result.error.upper() if result.error else False
     started = not fatal
 
@@ -164,7 +148,7 @@ def main():
 
     print_summary(results)
 
-    # Exit non-zero if any case failed startup
+
     failed = [r for r in results if not r.started]
     sys.exit(len(failed))
 
