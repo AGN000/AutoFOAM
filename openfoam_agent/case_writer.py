@@ -157,9 +157,6 @@ class CaseWriter:
             written.append(fp)
         return written
 
-    # ------------------------------------------------------------------ #
-    #  system/controlDict
-    # ------------------------------------------------------------------ #
 
     def _control_dict(self, cfg: CaseWriterConfig) -> str:
         p = cfg.params
@@ -205,9 +202,7 @@ runTimeModifiable true;
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 """
 
-    # ------------------------------------------------------------------ #
-    #  system/fvSchemes
-    # ------------------------------------------------------------------ #
+
 
     def _fv_schemes(self, cfg: CaseWriterConfig) -> str:
         p = cfg.params
@@ -217,7 +212,7 @@ runTimeModifiable true;
         if pol:
             div_u = pol.div_u
         else:
-            # For transient laminar, linearUpwind is more robust on Gmsh unstructured meshes
+         
             if is_turb:
                 div_u = "Gauss limitedLinear 1"
             elif p.is_transient:
@@ -226,7 +221,7 @@ runTimeModifiable true;
                 div_u = "Gauss linear"
         h = _header("dictionary", "fvSchemes")
 
-        # Always required by OpenFOAM 2412 simpleFoam/pimpleFoam for viscous stress
+     
         if p.is_multiphase:
             div_extra = "    div(((rho*nuEff)*dev2(T(grad(U))))) Gauss linear;\n"
             div_extra += "    div(rhoPhi,U)           Gauss limitedLinear 1;\n"
@@ -237,19 +232,18 @@ runTimeModifiable true;
             div_extra += "    div(phi,alpha)           Gauss interfaceCompression vanLeer 1;\n"
             div_extra += "    div(phirb,alpha)         Gauss linear;\n"
         elif p.is_compressible:
-            # Pure upwind for compressible transient (rhoPimpleFoam) — more robust
-            # than linearUpwind against CFL spikes in 2D wall-bounded ducts
+
             div_u = "bounded Gauss upwind" if p.is_transient else "bounded Gauss linearUpwind grad(U)"
             div_extra = "    div(((rho*nuEff)*dev2(T(grad(U))))) Gauss linear;\n"
-            # Using sensibleEnthalpy → div(phi,h); also need K and Ekp
+         
             div_extra += "    div(phi,h)              bounded Gauss upwind;\n"
             div_extra += "    div(phi,K)              bounded Gauss upwind;\n"
             div_extra += "    div(phi,Ekp)            bounded Gauss upwind;\n"
             if p.is_transient:
-                # rhoPimpleFoam requires div(phiv,p) for the pressure-velocity correction
+             
                 div_extra += "    div(phiv,p)             Gauss upwind;\n"
             else:
-                # rhoSimpleFoam uses phid (density-weighted flux)
+              
                 div_extra += "    div(phid,p)             Gauss upwind;\n"
             div_extra += "    div((phi|interpolate(rho)),p) bounded Gauss upwind;\n"
         elif p.has_heat_transfer:
@@ -312,9 +306,7 @@ snGradSchemes
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 """
 
-    # ------------------------------------------------------------------ #
-    #  system/fvSolution
-    # ------------------------------------------------------------------ #
+
 
     def _fv_solution(self, cfg: CaseWriterConfig) -> str:
         p = cfg.params
@@ -533,7 +525,7 @@ solvers
         elif solver == "rhoSimpleFoam":
             heat_relax = "        e               0.7;\n"
         if solver == "rhoSimpleFoam":
-            # Tutorial-matched setup: pMinFactor/pMaxFactor prevent T<0 divergence
+        
             algo = f"""\
 SIMPLE
 {{
@@ -651,9 +643,7 @@ SIMPLE
 
         return h + solvers + algo + "\n// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //\n"
 
-    # ------------------------------------------------------------------ #
-    #  system/blockMeshDict  (fallback when gmsh not used)
-    # ------------------------------------------------------------------ #
+
 
     def _block_mesh_dict(self, cfg: CaseWriterConfig) -> str:
         p = cfg.params
@@ -775,10 +765,8 @@ mixture
 """
 
     def _thermo_props_compressible(self, cfg: CaseWriterConfig) -> str:
-        """thermophysicalProperties for rhoPimpleFoam / rhoSimpleFoam (perfect gas)."""
         h = _header("dictionary", "thermophysicalProperties")
-        # sensibleEnthalpy is numerically more stable than sensibleInternalEnergy for
-        # rhoPimpleFoam at higher Mach numbers (avoids negative T0 at first timestep)
+
         return h + """\
 thermoType
 {
@@ -827,7 +815,7 @@ sigma           sigma [1 0 -2 0 0 0 0] 0.07;
 """
 
     def _alpha_field(self, cfg: CaseWriterConfig, patches: list[str]) -> str:
-        """0/alpha.water VOF field for interFoam."""
+
         h = _header("volScalarField", "alpha.water")
         bc_lines = []
         for patch in patches:
@@ -883,8 +871,6 @@ boundaryField
     def _p_field_compressible(self, cfg: CaseWriterConfig, patches: list[str]) -> str:
         """0/p in absolute pressure (Pa) for rhoPimpleFoam / rhoSimpleFoam."""
         h = _header("volScalarField", "p")
-        # Non-reflective outlet BC for transient compressible (rhoPimpleFoam)
-        # prevents acoustic wave reflection that accumulates continuity errors
         use_wave = cfg.params.is_transient
         bc_lines = []
         for patch in patches:
@@ -1079,7 +1065,6 @@ boundaryField
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 """
         bc_text = "".join(self._bc_block(p, "U", cfg) for p in patches)
-        # For compressible transient, start from rest — sudden high-Ma IC causes divergence
         u_init = "0 0 0" if (cfg.params.is_compressible and cfg.params.is_transient) else f"{U} 0 0"
         return h + f"""\
 dimensions      [0 1 -1 0 0 0 0];
@@ -1226,7 +1211,7 @@ boundaryField
                 eps_bc_lines.append(f"    {patch}\n    {{\n        type            inletOutlet;\n        inletValue      uniform {eps_bulk};\n        value           uniform {eps_bulk};\n    }}\n")
                 nut_bc_lines.append(f"    {patch}\n    {{\n        type            zeroGradient;\n    }}\n")
             else:
-                # Wall patches: proper wall functions prevent FP exceptions in kOmegaSST/kEpsilon
+               
                 k_bc_lines.append(f"    {patch}\n    {{\n        type            kqRWallFunction;\n        value           uniform {k_val};\n    }}\n")
                 omega_bc_lines.append(f"    {patch}\n    {{\n        type            omegaWallFunction;\n        value           uniform {omg_bulk};\n    }}\n")
                 eps_bc_lines.append(f"    {patch}\n    {{\n        type            epsilonWallFunction;\n        value           uniform {eps_bulk};\n    }}\n")
