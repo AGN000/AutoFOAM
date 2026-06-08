@@ -16,7 +16,7 @@ _MAX_CHUNK_TOKENS = 1500  # ~6000 chars
 def _truncate(text: str, max_chars: int = 6000) -> str:
     if len(text) <= max_chars:
         return text
-    # Truncate at last closing brace before limit
+
     cut = text[:max_chars]
     idx = cut.rfind("}")
     return cut[: idx + 1] if idx > 0 else cut
@@ -65,9 +65,9 @@ def _detect_solver(case_dir: Path) -> str:
 
 
 def _detect_physics_tags(case_dir: Path) -> str:
-    """Extract physics keywords from case files for richer embeddings."""
+
     tags = []
-    # Check turbulence model from constant/turbulenceProperties or RASProperties
+
     for fname in ("turbulenceProperties", "RASProperties", "LESProperties"):
         fpath = case_dir / "constant" / fname
         if not fpath.exists():
@@ -80,7 +80,7 @@ def _detect_physics_tags(case_dir: Path) -> str:
                 if model in text:
                     tags.append(f"turbulence model {model}")
                     break
-    # Check 0/ fields for velocity magnitude clues
+
     u_field = case_dir / "0" / "U"
     if not u_field.exists():
         for fp in case_dir.rglob("0/U"):
@@ -88,7 +88,7 @@ def _detect_physics_tags(case_dir: Path) -> str:
             break
     if u_field.exists():
         text = u_field.read_text(errors="ignore")
-        # Look for uniform velocity values
+
         import re as _re
         m = _re.search(r"uniform\s*\(\s*([\d.eE+-]+)", text)
         if m:
@@ -97,7 +97,7 @@ def _detect_physics_tags(case_dir: Path) -> str:
                 tags.append(f"inlet velocity {u:.2g} m/s")
             except ValueError:
                 pass
-    # Check geometry name hints
+
     name = case_dir.name.lower()
     for keyword in ("cavity", "pipe", "cylinder", "channel", "step", "airfoil",
                     "wing", "duct", "sphere", "wedge", "axisymmetric",
@@ -142,7 +142,7 @@ class TutorialRAG:
 
             physics_tags = _detect_physics_tags(case_dir)
 
-            # Chunk 1: case summary — enriched with physics keywords
+
             summary = (
                 f"Case: {case_dir.name}\nSolver: {solver}\n2D: {is_2d}\n"
                 f"Physics: {physics_tags}\n\n{readme}"
@@ -151,28 +151,27 @@ class TutorialRAG:
             metas.append({**base_meta, "chunk_type": "case_summary"})
             ids.append(f"{case_dir.name}_summary")
 
-            # Chunk 2: controlDict
+
             ctrl = case_dir / "system" / "controlDict"
             if ctrl.exists():
                 docs.append(_truncate(ctrl.read_text(errors="ignore")))
                 metas.append({**base_meta, "chunk_type": "control_dict"})
                 ids.append(f"{case_dir.name}_controlDict")
 
-            # Chunk 3: fvSchemes + fvSolution
+
             fv_text = _read_dir_files(case_dir / "system")
             if fv_text:
                 docs.append(_truncate(fv_text))
                 metas.append({**base_meta, "chunk_type": "fv_schemes"})
                 ids.append(f"{case_dir.name}_fv")
 
-            # Chunk 4: 0/ boundary conditions
             bc_text = _read_dir_files(case_dir / "0")
             if bc_text:
                 docs.append(_truncate(bc_text))
                 metas.append({**base_meta, "chunk_type": "boundary_conditions"})
                 ids.append(f"{case_dir.name}_bc")
 
-            # Chunk 5: .geo file if present
+
             geo_files = list(case_dir.rglob("*.geo"))
             if geo_files:
                 geo_text = geo_files[0].read_text(errors="ignore")
@@ -195,22 +194,22 @@ class TutorialRAG:
 
     @staticmethod
     def _build_query(params: CFDParams, solver: str, prompt: str = "") -> str:
-        """Build a natural-language RAG query from params + optional user prompt."""
+
         if prompt:
-            # Use the actual user prompt as primary signal — gives best embedding match
+        
             re_str = f"Reynolds number {params.reynolds_number:.0f}" if params.reynolds_number else ""
             geom = params.geometry_type.value.replace("_", " ")
             regime = params.flow_regime.value
             dim = "3D" if params.is_3d else "2D"
             turb = params.turbulence_model.value
             state = "transient unsteady" if params.is_transient else "steady state"
-            # Combine user prompt with physics context for richer embedding
+         
             return (
                 f"{prompt}. "
                 f"{dim} {geom} flow, {regime} regime, {re_str}, "
                 f"{solver} solver, {turb} turbulence model, {state}."
             )
-        # Fallback if no prompt: natural-language description from params
+  
         re_str = f"Reynolds number {params.reynolds_number:.0f}" if params.reynolds_number else ""
         geom = params.geometry_type.value.replace("_", " ")
         regime = params.flow_regime.value
@@ -272,9 +271,7 @@ class TutorialRAG:
         Empty strings if a chunk type is missing for that case (some tutorials
         have no 0/ directory etc.).
         """
-        # Pull more candidates than we need so we can filter out summary-only
-        # KnowledgeBase entries (which have no controlDict / fvSchemes / BC
-        # chunks indexed and so can't serve as adaptable templates).
+
         oversample = max(n_cases * 4, 8)
         ranked = self.retrieve(params, solver, n_results=oversample, prompt=prompt)
         out: list[dict] = []
@@ -307,15 +304,12 @@ class TutorialRAG:
                         entry["fv_schemes"] = doc
                     elif ct == "boundary_conditions":
                         entry["boundary_conditions"] = doc
-            # Skip if no file content was found — summary alone isn't an
-            # adaptable template. Fall back to summary-only only if we
-            # exhaust the candidate list without finding file-bearing cases.
+
             has_files = any((entry["control_dict"], entry["fv_schemes"],
                               entry["boundary_conditions"]))
             if has_files:
                 out.append(entry)
-        # Fallback: if absolutely no file-bearing case was found, return the
-        # top-ranked summaries so the caller still has *something*.
+
         if not out and ranked:
             r = ranked[0]
             out.append({
