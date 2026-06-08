@@ -155,8 +155,7 @@ _TRANSIENT_KEYWORDS = ("unsteady", "transient", "time-varying", "time-dependent"
                         "pimplefoam", "rhopimplefoam", "buoyantpimplefoam",
                         "urans")
 
-# Fluid library at standard conditions (kinematic viscosity m²/s, density kg/m³).
-# Order matters: more specific keywords come first so "glycerine" matches before "water".
+
 _FLUIDS: list[tuple[tuple[str, ...], float, float]] = [
     (("glycerine", "glycerin"), 1.18e-3, 1260.0),
     (("engine oil", "motor oil", "lubricating oil"), 5.0e-4, 870.0),
@@ -183,10 +182,7 @@ def _fluid_from_prompt(prompt_lower: str) -> tuple[float | None, float | None]:
 
 import re as _re_module
 
-# A single regex that captures a Reynolds-number specification in the user's
-# prompt — matches 're=1000', 're = 1e6', 'Re 5000', 'Reynolds number 1.5e5',
-# 'Re of 100k', etc. We use the same regex for both the boolean check and
-# value extraction so they can never disagree.
+
 _RE_NUM = r"([0-9]+(?:\.[0-9]+)?(?:\s*[xX]\s*10\^?[0-9]+|e[+-]?[0-9]+)?)"
 _RE_PATTERNS = [
     _re_module.compile(rf"re(?:ynolds)?(?:\s+number)?\s*(?:[=:]|of|is|~|≈|approx)?\s*{_RE_NUM}\s*([km])?\b",
@@ -277,9 +273,7 @@ def _post_validate_raw(raw: dict, prompt: str = "", original_prompt: str | None 
 
     length = _get("length", dims["length"])
 
-    # Prompt-regex overrides for chord (airfoil) and diameter (pipe/cylinder).
-    # The refiner sometimes drops or rewrites these numeric specs; always
-    # trust the user's literal value when one is given.
+
     _user_prompt_for_dims = (original_prompt if original_prompt else prompt).lower()
     if geom == "airfoil":
         chord = _extract_dim_from_prompt(_user_prompt_for_dims, "chord")
@@ -291,23 +285,15 @@ def _post_validate_raw(raw: dict, prompt: str = "", original_prompt: str | None 
             diameter = d_user
     outlet_pressure = raw.get("outlet_pressure", 0.0)
 
-    # Keyword heuristics — use ONLY the user's original prompt as the source
-    # of truth for keyword detection. The refiner may invent numbers (U=1 m/s
-    # default for Re-only prompts) and the LLM's `extraction_notes` field may
-    # contain explanatory text like "considering multiphase…" that would
-    # leak unwanted keywords into the multiphase / compressible / heat /
-    # transient classifiers below.
     user_prompt = original_prompt if original_prompt else prompt
     prompt_lower = user_prompt.lower()
 
-    # Fluid properties: prefer LLM-extracted nu/rho when present and physical;
-    # otherwise infer from a fluid keyword in the prompt; otherwise default to air.
+
     raw_nu = raw.get("kinematic_viscosity")
     raw_rho = raw.get("density")
     fluid_nu, fluid_rho = _fluid_from_prompt(prompt_lower)
     if raw_nu and raw_nu > 0:
-        # Sanity check: if a fluid keyword is named and the LLM's nu is off by
-        # >5× from the canonical value, override (LLM hallucinated air for water).
+
         if fluid_nu is not None and not (0.2 * fluid_nu <= raw_nu <= 5 * fluid_nu):
             nu = fluid_nu
         else:
@@ -321,18 +307,12 @@ def _post_validate_raw(raw: dict, prompt: str = "", original_prompt: str | None 
             density = raw_rho
     else:
         density = fluid_rho if fluid_rho is not None else 1.225
-    # Physics flags — keyword-decisive policy. The fine-tuned LLM tends to
-    # over-predict is_transient and is_multiphase on prompts whose only cue
-    # is the geometry. To stop those false positives, we make the user's
-    # prompt the source of truth: a flag is True only if a corresponding
-    # keyword is present, OR the LLM said True AND there is at least a weak
-    # corroborating signal in the prompt (e.g. an "ideal gas" hint for
-    # compressibility, or a numbered Mach value).
+
     kw_multiphase    = any(kw in prompt_lower for kw in _MULTIPHASE_KEYWORDS)
     kw_compressible  = any(kw in prompt_lower for kw in _COMPRESSIBLE_KEYWORDS)
     kw_heat          = any(kw in prompt_lower for kw in _HEAT_KEYWORDS)
     kw_transient     = any(kw in prompt_lower for kw in _TRANSIENT_KEYWORDS)
-    # Explicit "steady" wording is a strong negative signal for transience.
+   
     explicit_steady  = any(kw in prompt_lower for kw in
                             ("steady-state", "steady state", " steady ",
                              "steady,", "steady.", "steady;"))
@@ -344,8 +324,6 @@ def _post_validate_raw(raw: dict, prompt: str = "", original_prompt: str | None 
     if explicit_steady:
         is_transient = False
 
-    # end_time: use LLM value if present, else short default for transient (10s),
-    # long default for steady-state (1000 iterations)
     raw_end_time = raw.get("end_time")
     if raw_end_time and raw_end_time > 0:
         end_time = raw_end_time
@@ -354,25 +332,23 @@ def _post_validate_raw(raw: dict, prompt: str = "", original_prompt: str | None 
     else:
         end_time = 1000.0
 
-    # Width: use diameter if available for pipes/cylinders
     if diameter and diameter > 0:
         if geom == "pipe":
             width = diameter
         elif geom == "cylinder":
-            # domain width = 8*D for flow-over-cylinder benchmark
+           
             width = _get("width", max(8 * diameter, dims["width"]))
         else:
             width = _get("width", dims["width"])
     else:
         width = _get("width", dims["width"])
 
-    # If the prompt describes a square / cubical geometry, force width = length
-    # (and depth = length for 3D), regardless of what the LLM emitted.
+
     if _prompt_implies_square(prompt_lower) and geom in (
             "lid_driven_cavity", "box"):
         width = length
         if is_3d:
-            # height set below; for now keep length
+          
             pass
 
     # Height
@@ -384,18 +360,14 @@ def _post_validate_raw(raw: dict, prompt: str = "", original_prompt: str | None 
     else:
         height = 0.001
 
-    # Reynolds number — accept LLM value, then fallback to regex-extract from
-    # the prompt, then leave as None for downstream to derive from U,L,nu.
+
     re = raw.get("reynolds_number")
     if re is not None and re <= 0:
         re = None
     if re is None:
         re = _extract_re_from_prompt(prompt_lower)
 
-    # Choose the characteristic length used in Re = U·L_char/ν.
-    #   pipes / cylinders → diameter
-    #   airfoils          → chord (stored in `length`)
-    #   cavities / boxes / channels / wedges → streamwise length
+
     if geom in ("pipe", "cylinder") and diameter:
         char_len = diameter
     elif geom == "airfoil":
@@ -406,10 +378,7 @@ def _post_validate_raw(raw: dict, prompt: str = "", original_prompt: str | None 
     else:
         char_len = diameter or length
 
-    # Inlet velocity. The LLM (and especially the refiner) commonly emits a
-    # default U=1.0 even when the user only specified Re. Detect whether the
-    # *original* user prompt mentions a velocity at all; if it doesn't but
-    # mentions Re, derive U = Re * nu / L unconditionally.
+
     raw_u = raw.get("inlet_velocity")
     user_mentions_velocity = any(
         kw in prompt_lower for kw in
@@ -425,11 +394,11 @@ def _post_validate_raw(raw: dict, prompt: str = "", original_prompt: str | None 
     else:
         inlet_velocity = _get("inlet_velocity", 1.0)
 
-    # Compute Re if still missing, using the same characteristic length.
+
     if re is None and char_len > 0:
         re = inlet_velocity * char_len / nu
 
-    # Flow regime from Re
+
     if re < 2300:
         flow_regime = FlowRegime.LAMINAR
     elif re > 4000:
@@ -437,7 +406,6 @@ def _post_validate_raw(raw: dict, prompt: str = "", original_prompt: str | None 
     else:
         flow_regime = FlowRegime.TRANSITIONAL
 
-    # Turbulence model
     raw_turb = raw.get("turbulence_model", "")
     if flow_regime == FlowRegime.LAMINAR:
         turbulence_model = TurbulenceModel.LAMINAR
@@ -446,7 +414,7 @@ def _post_validate_raw(raw: dict, prompt: str = "", original_prompt: str | None 
     else:
         turbulence_model = TurbulenceModel.K_OMEGA_SST
 
-    # Diameter for pipe/cylinder
+
     if diameter is None or diameter <= 0:
         if geom in ("pipe", "cylinder"):
             diameter = width if geom == "pipe" else _get("diameter", dims.get("width", 0.1))
