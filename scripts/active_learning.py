@@ -1,32 +1,4 @@
-#!/usr/bin/env python3
-"""Active learning for the weakest solver family (Layer 6).
 
-Identifies the worst-performing solver family from a recent OOD eval,
-auto-generates N paraphrased prompts in that family, runs them through
-the agent, and emits the high-scoring results as Qwen-chat training rows
-ready to be appended to the next evolve.sh training corpus.
-
-This is the layer that breaks self-distillation: every cycle adds
-genuinely-new prompts in the area the model is weakest at, instead of
-recycling the catalog the model already trained on.
-
-Usage:
-    python scripts/active_learning.py \\
-        --eval data/checkpoints/evolution_*/ood_eval_v3.jsonl \\
-        --n 30 --out /tmp/active_pimplefoam.jsonl
-
-    # In an evolve cycle:
-    python scripts/active_learning.py --eval $LAST_EVAL --out $WORKDIR/active.jsonl
-    cat $WORKDIR/active.jsonl >> $WORKDIR/expert_train.jsonl
-
-Notes:
-- If no family in the eval is below ACTIVE_LEARNING_THRESHOLD, the script
-  exits 0 with no output (prevents wasting compute when the model is
-  uniformly strong).
-- Seed prompts come from the existing prompt_catalog filtered by solver
-  family. The LLM rewrites each seed with parameter variations.
-- Only rows with score >= MIN_RETRAIN_SCORE are emitted.
-"""
 from __future__ import annotations
 
 import argparse
@@ -74,12 +46,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def detect_weakest_family(eval_path: Path, threshold: float) -> str | None:
-    """Return the solver family with the lowest expected_solver-match rate.
 
-    Tie-broken by smallest sample size (so noisy small-N families don't
-    pull us toward training on garbage). Returns None if every family is
-    above the threshold.
-    """
     rows = [json.loads(l) for l in eval_path.read_text().splitlines() if l.strip()]
     by_solver: dict[str, list[bool]] = collections.defaultdict(list)
     for r in rows:
@@ -105,7 +72,6 @@ def detect_weakest_family(eval_path: Path, threshold: float) -> str | None:
 
 
 def collect_seed_prompts(target_family: str, max_seeds: int = 8) -> list[str]:
-    """Pull catalog prompts whose params route to target_family via select_solver."""
     from openfoam_agent.prompt_catalog import PROMPT_CATALOG
     seeds = []
     for case in PROMPT_CATALOG:
@@ -164,16 +130,11 @@ Output ONLY the new prompt. Do not name the solver. Do not add commentary.
 
 def generate_variants(llm, target_family: str, seeds: list[str], n: int,
                        adversarial: bool = False) -> list[str]:
-    """Use the LLM to author n paraphrased prompts in the target family.
 
-    If adversarial=True, prompts are deliberately tricky for first-try success
-    (borderline Re, unusual fluids, ambiguous geometry hints) so that the
-    Layer-1 retry loop fires and feeds attempts.jsonl with DPO-ready pairs.
-    """
     if not seeds:
         return []
     from vllm import SamplingParams
-    # Higher temperature on adversarial prompts → more variety in difficulty hooks.
+
     temp = 1.0 if adversarial else 0.9
     sp = SamplingParams(temperature=temp, top_p=0.95, max_tokens=220, n=1)
     system = ADVERSARIAL_SYSTEM if adversarial else GEN_SYSTEM
@@ -182,8 +143,7 @@ def generate_variants(llm, target_family: str, seeds: list[str], n: int,
     seen: set[str] = set()
     print(f"[active] Generating {n} {label} prompts for {target_family}…")
     while len(out) < n:
-        # Rotate through seeds; each generation sees up to 3 examples.
-        i = len(out)
+              i = len(out)
         sample = seeds[i % len(seeds): i % len(seeds) + 3] or seeds[:3]
         user = (f"TARGET SOLVER: {target_family}\n\n"
                 f"EXAMPLE PROMPTS (write a new one in the same regime, do not copy):\n"
@@ -210,17 +170,10 @@ def generate_variants(llm, target_family: str, seeds: list[str], n: int,
 
 
 def run_agent_on_prompts(prompts: list[str], end_time: float, timeout: int):
-    """Yield (prompt, AgentResult) for each prompt — sequentially.
 
-    Each .run() spins through extract → mesh → write → run → score, ~10–60 s
-    per prompt depending on geometry complexity. Sequential is fine for ~30
-    prompts; parallelising means >1 vLLM instance which complicates this
-    single-script setup.
-    """
     from openfoam_agent.agent import OpenFOAMAgent
     agent = OpenFOAMAgent(use_llm=True)
-    # Don't pollute the live capture file with active-learning runs;
-    # we'll emit our own filtered JSONL.
+
     agent._save_to_dataset = lambda *a, **kw: None   # type: ignore
     for p in prompts:
         case_name = f"active_{uuid.uuid4().hex[:8]}"
@@ -244,8 +197,7 @@ def main():
 
     target_family = args.family or detect_weakest_family(args.eval, args.threshold)
     if target_family is None:
-        # Touch the output file so downstream (cat $OUT >> ...) is a no-op,
-        # not an error.
+
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text("")
         print(f"[active] No target family — wrote empty {args.out}")
@@ -284,8 +236,7 @@ def main():
                   f"solver={res.solver} t={elapsed:.0f}s{extra}")
             if res.score < args.min_score or not res.case_dir:
                 continue
-            # Reuse training.format_example for the Qwen-chat row (matches
-            # exactly what train_qlora.py expects and what curate emits).
+
             ex = TrainingExample(
                 prompt=prompt,
                 refined_prompt=res.refined_prompt or prompt,
@@ -309,8 +260,7 @@ def main():
 
 
 def _read_files(case_dir: str) -> str:
-    """Mirror of OpenFOAMAgent._read_case_files (kept inline so we don't
-    need to instantiate a second agent just to read files)."""
+
     from pathlib import Path
     parts = []
     p = Path(case_dir)
