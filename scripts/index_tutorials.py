@@ -1,5 +1,4 @@
-#!/usr/bin/env python3
-"""One-time script to index OpenFOAM tutorial cases into ChromaDB."""
+
 
 import sys
 import argparse
@@ -33,7 +32,7 @@ def main():
     n_docs = rag.index_tutorials(args.tutorials_dir)
     print(f"Indexed {n_docs} document chunks into ChromaDB at {args.chroma_dir}")
 
-    # Test query
+
     from openfoam_agent.schemas import CFDParams, GeometryType, FlowRegime, TurbulenceModel
     test_params = CFDParams(
         geometry_type=GeometryType.CYLINDER,
