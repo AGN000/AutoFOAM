@@ -1,11 +1,4 @@
 #!/usr/bin/env bash
-# Usage:
-#   bash scripts/ask.sh "2D lid-driven cavity Re=1000, 2m square, water"
-# Optional env vars:
-#   GPU=4          # force a specific GPU (default: auto-pick a free one)
-#   TIMEOUT=300    # solver wall-clock timeout (s)
-#   RETRIES=2      # max retry attempts
-#   QUIET=1        # filter vLLM noise (default: 0 — show everything for debugging)
 
 if [ -z "$1" ]; then
     echo "usage: $0 \"<your CFD prompt here>\""
@@ -55,8 +48,7 @@ echo "=========================================================="
 source /home/nvidia/miniconda3/envs/openfoam2412/etc/bashrc 2>/dev/null
 
 cd "$PROJ"
-# Run with line-buffered Python output so we see progress live.
-# Tee to log so we keep a copy even if grep filters interactive output.
+
 if [ "$QUIET" = "1" ]; then
     PYTHONUNBUFFERED=1 CUDA_VISIBLE_DEVICES=$GPU $PY -u scripts/run_agent.py run "$PROMPT" \
         --timeout "$TIMEOUT" --retries "$RETRIES" 2>&1 \
