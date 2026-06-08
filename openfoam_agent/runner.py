@@ -36,7 +36,7 @@ def _check_convergence(log: str) -> bool:
         return True
     if "FOAM FATAL ERROR" in log or "FOAM FATAL Exception" in log:
         return False
-    # Completed time loop without fatal error
+
     if "ExecutionTime" in log and "End" in log and "FOAM FATAL" not in log:
         return True
     return False
@@ -47,8 +47,7 @@ def _parse_residuals(log: str) -> tuple[dict[str, float], dict[str, list[float]]
     history: dict[str, list[float]] = {}
 
     for line in log.splitlines():
-        # OpenFOAM residual line format:
-        # "Solving for Ux, Initial residual = 0.5, Final residual = 1e-6, No Iterations 10"
+
         if "Solving for" in line and "Initial residual" in line:
             parts = line.split(",")
             field_part = parts[0].split("Solving for")[-1].strip()
@@ -65,12 +64,12 @@ def _parse_residuals(log: str) -> tuple[dict[str, float], dict[str, list[float]]
                         final_val = float(part.split("=")[-1].strip())
                     except ValueError:
                         pass
-            # Track Initial residual for convergence history (decreases 1→0)
+
             if init_val is not None:
                 if field not in history:
                     history[field] = []
                 history[field].append(init_val)
-            # Final residual = last solver iteration result
+   
             if final_val is not None:
                 final[field] = final_val
 
@@ -150,8 +149,7 @@ def run_simulation(
             log=full_log,
         )
 
-    # Remove stale timestep directories from previous runs (OpenFOAM restarts
-    # from the latest directory, which could be from an earlier failed run).
+
     for d in case_dir.iterdir():
         if d.is_dir() and d.name.lstrip("-").replace(".", "", 1).isdigit():
             if d.name not in ("0",):
