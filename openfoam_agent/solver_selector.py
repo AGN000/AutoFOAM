@@ -27,7 +27,7 @@ def compute_mesh_resolution(params: CFDParams) -> dict[str, int]:
     aspect = L / W if W > 0 else 1.0
 
     if params.is_3d:
-        # Cap 3D mesh to ~100k cells to keep blockMesh fallback tractable
+
         nx = min(60, max(10, int(base * min(aspect, 3))))
         ny = min(40, base)
         nz = max(5, base // 4)
@@ -49,12 +49,10 @@ def compute_time_settings(params: CFDParams, solver: str) -> dict:
     res = compute_mesh_resolution(params)
     dx_bulk = params.length / res["nx"]
 
-    # For cylinder/bluff-body geometries the gmsh near-wall mesh is much finer
-    # than the bulk dx — use the cylinder diameter as the characteristic cell size
+
     if params.geometry_type == GeometryType.CYLINDER:
         D = params.diameter or params.width
-        # For laminar icoFoam/pimpleFoam: strict CFL<1 → D/20
-        # For turbulent pimpleFoam with kOmegaSST: CFL<2 is OK → D/10
+
         from .schemas import FlowRegime
         if params.flow_regime == FlowRegime.LAMINAR:
             dx = D / 20.0
