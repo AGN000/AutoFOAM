@@ -1,18 +1,4 @@
-#!/usr/bin/env python3
-"""
-Index (or re-index) the OpenFOAM tutorial cases AND the canonical knowledge base
-into ChromaDB.
 
-Run this once after cloning the repo or whenever knowledge_base.py changes:
-    conda run -n vllm_env python scripts/index_knowledge_base.py
-
-What it does:
-  1. Clears the existing ChromaDB collection.
-  2. Re-indexes all tutorial cases from TUTORIALS_DIR with enriched physics tags.
-  3. Indexes the canonical knowledge base (cavity, pipe, cylinder, channel, BFS,
-     airfoil, wedge, buoyancy) as expert reference documents.
-  4. Prints a summary of what was indexed and runs a quick retrieval test.
-"""
 from __future__ import annotations
 
 import sys
@@ -41,8 +27,6 @@ def main():
     print(f"[index] Tutorials dir : {TUTORIALS_DIR}")
 
     rag = TutorialRAG()
-
-    # ── Step 1: Clear existing collection ──────────────────────────────────
     try:
         rag.client.delete_collection("openfoam_tutorials")
         print("[index] Cleared existing collection.")
@@ -58,7 +42,7 @@ def main():
         metadata={"hnsw:space": "cosine"},
     )
 
-    # ── Step 2: Index tutorials ─────────────────────────────────────────────
+
     if TUTORIALS_DIR.exists():
         n_tutorials = rag.index_tutorials(TUTORIALS_DIR)
         print(f"[index] Indexed {n_tutorials} tutorial documents from {TUTORIALS_DIR}")
@@ -66,11 +50,9 @@ def main():
         print(f"[index] WARNING: tutorials dir not found: {TUTORIALS_DIR}")
         n_tutorials = 0
 
-    # ── Step 3: Index knowledge base ────────────────────────────────────────
     n_kb = rag.index_knowledge_base()
     print(f"[index] Indexed {n_kb} knowledge-base documents")
 
-    # ── Step 4: Index external validated cases ──────────────────────────────
     augmented_cases = []
     if AUGMENTED_DIR.exists():
         augmented_cases = [d for d in sorted(AUGMENTED_DIR.iterdir())
@@ -93,7 +75,7 @@ def main():
     total = rag.collection.count()
     print(f"[index] Total documents in ChromaDB: {total}")
 
-    # ── Step 4: Quick retrieval test ────────────────────────────────────────
+
     print("\n[index] Quick retrieval test:")
     print(f"{'─'*70}")
 
