@@ -9,7 +9,6 @@ from .schemas import TrainingExample, CFDParams
 from .agent import SEED_PROMPTS
 
 
-# ── System prompt: OpenFOAM expert persona ──────────────────────────────────
 
 EXPERT_SYSTEM_PROMPT = """\
 You are an expert OpenFOAM CFD engineer with deep knowledge of computational \
@@ -44,7 +43,6 @@ Complete file contents for all required OpenFOAM dictionaries."""
 
 
 def _build_expert_analysis(example: TrainingExample) -> str:
-    """Build the ## CFD Analysis section from TrainingExample metadata."""
     p: Optional[CFDParams] = example.params
     if p is None:
         return f"Solver: {example.solver}. Score: {example.score:.2f}."
@@ -78,7 +76,7 @@ def _build_expert_analysis(example: TrainingExample) -> str:
     return "\n".join(lines)
 
 
-# ── Qwen chat format (im_start / im_end tokens) ─────────────────────────────
+
 
 _QWEN_CHAT_TEMPLATE = """\
 <|im_start|>system
@@ -97,7 +95,7 @@ _QWEN_CHAT_TEMPLATE = """\
 {case_files}
 <|im_end|>"""
 
-# Kept for backwards compat with old checkpoints
+
 _ALPACA_TEMPLATE = """\
 ### Instruction:
 {instruction}
@@ -110,7 +108,7 @@ _ALPACA_TEMPLATE = """\
 
 
 def format_example(example: TrainingExample, rag_context: str = "") -> str:
-    """Format a training example as Qwen chat (default) or Alpaca."""
+
     analysis = _build_expert_analysis(example)
     case_files = example.case_files_text or "(no case files captured)"
     return _QWEN_CHAT_TEMPLATE.format(
@@ -121,11 +119,7 @@ def format_example(example: TrainingExample, rag_context: str = "") -> str:
     )
 
 
-# ── DPO helpers (Layer 4) ───────────────────────────────────────────────────
-# DPO training needs (prompt, chosen, rejected) where prompt is the
-# conversation up to the assistant turn, and chosen/rejected are alternative
-# assistant responses. Splitting format_example along the assistant boundary
-# keeps the SFT and DPO views byte-identical on the prompt side.
+
 
 def format_dpo_prompt(user_prompt: str) -> str:
     """The Qwen-chat prefix up to (but not including) the assistant content."""
@@ -197,7 +191,7 @@ def collect_training_episodes(
 
 
 def make_reward_weighted_trainer(base_trainer_cls):
-    """Factory: wraps any SFTTrainer subclass with per-sample reward weighting."""
+
 
     class RewardWeightedSFTTrainer(base_trainer_cls):
         def __init__(self, reward_weights: list[float], *args, **kwargs):
