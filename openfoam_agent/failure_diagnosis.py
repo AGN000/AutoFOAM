@@ -29,7 +29,7 @@ def diagnose(run_result: RunResult, score: float = 0.0) -> DiagnosisResult:
     err = run_result.error_message
     combined = (log + " " + err).lower()
 
-    # ── FOAM FATAL errors ──────────────────────────────────────────────────
+
     if "foam fatal" in combined:
         mesh_kw = ("polymesh", "non-orthogon", "skewness", "checkmesh",
                    "mesh quality", "face area", "cell volume", "determinant")
@@ -63,7 +63,6 @@ def diagnose(run_result: RunResult, score: float = 0.0) -> DiagnosisResult:
             {"regen_mesh": True},
         )
 
-    # ── Floating point / NaN divergence ───────────────────────────────────
     fp_kw = ("floating point", "sigfpe", "-nan", "1.#ind", "overflow",
              "maximum number of iterations exceeded")
     if any(k in combined for k in fp_kw):
@@ -73,7 +72,7 @@ def diagnose(run_result: RunResult, score: float = 0.0) -> DiagnosisResult:
             {"reduce_relaxation": True, "reduce_dt": True, "use_upwind": True},
         )
 
-    # ── Diverging residuals ────────────────────────────────────────────────
+
     residuals = run_result.final_residuals
     if residuals:
         max_res = max(residuals.values())
@@ -84,7 +83,7 @@ def diagnose(run_result: RunResult, score: float = 0.0) -> DiagnosisResult:
                 {"reduce_relaxation": True, "reduce_dt": True},
             )
 
-    # ── Timeout ───────────────────────────────────────────────────────────
+
     if "timeout" in combined or run_result.runtime > 280:
         return DiagnosisResult(
             FailureType.TIMEOUT,
@@ -92,7 +91,7 @@ def diagnose(run_result: RunResult, score: float = 0.0) -> DiagnosisResult:
             {"coarser_mesh": True},
         )
 
-    # ── No residuals output (silent failure) ──────────────────────────────
+
     if not residuals and run_result.success:
         return DiagnosisResult(
             FailureType.UNKNOWN,
@@ -100,7 +99,7 @@ def diagnose(run_result: RunResult, score: float = 0.0) -> DiagnosisResult:
             {"fix_schemes": True, "fix_bc": True},
         )
 
-    # ── Did not converge ──────────────────────────────────────────────────
+
     return DiagnosisResult(
         FailureType.NO_CONVERGENCE,
         "Simulation did not converge",
