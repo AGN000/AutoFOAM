@@ -1,30 +1,3 @@
-#!/usr/bin/env python3
-"""Per-prompt A/B regression gate (Layer 7).
-
-Compares two eval JSONLs produced by full_test_parallel.py and flags
-per-prompt regressions that the aggregate pass-rate gate would miss.
-
-Two models can both score 110/110 PASS yet swap solvers on different
-subsets of prompts — the aggregate is unchanged but the user-visible
-behaviour is different. This script catches that.
-
-Flags emitted per prompt:
-  - SUCCESS_FLIP   : baseline passed, candidate failed (or vice versa)
-  - SOLVER_CHANGE  : solver-pick differs
-  - SCORE_DROP     : score dropped by more than --score-tolerance (default 0.10)
-  - FILES_CHANGE   : case_files_text differs (logged, not failed — diffs are
-                     expected on retraining and not necessarily a regression)
-
-Exit code:
-  0 = no flagged regression on prompts that previously passed
-  1 = one or more regressions detected — evolve.sh quarantines the candidate
-  2 = baseline / candidate file missing or malformed
-
-Usage:
-    python scripts/regression_diff.py \\
-        --baseline data/eval/baseline_eval_with_files.jsonl \\
-        --candidate <workdir>/ood_eval_v3.jsonl
-"""
 from __future__ import annotations
 
 import argparse
@@ -108,7 +81,7 @@ def main():
         if flags:
             flags_per_tag[tag] = flags
 
-    # ── Classify ───────────────────────────────────────────────────────────
+
     regressions = {tag: f for tag, f in flags_per_tag.items()
                    if any(fl in ("SUCCESS_FLIP", "SOLVER_CHANGE", "FILES_CHANGE")
                           or fl.startswith("SCORE_DROP")
@@ -133,7 +106,7 @@ def main():
     else:
         print(f"\n[diff] No flagged regressions — candidate ≥ baseline per-prompt.")
 
-    # Improvements (e.g. SUCCESS_FLIP_IMPROVE) are noted but not failed
+
     improvements = {tag: f for tag, f in flags_per_tag.items()
                     if "SUCCESS_FLIP_IMPROVE" in f and tag not in regressions}
     if improvements:
